@@ -35,9 +35,9 @@ jobs:
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-  release:
-    name: Release
-    uses: monicahq/workflows/.github/workflows/release.yml@v2
-    secrets:
-      GH_TOKEN_RELEASE: ${{ secrets.GH_TOKEN_RELEASE }}
-    needs: tests
+#   release:
+#     name: Release
+#     uses: monicahq/workflows/.github/workflows/release.yml@v2
+#     secrets:
+#       GH_TOKEN_RELEASE: ${{ secrets.GH_TOKEN_RELEASE }}
+#     needs: tests
