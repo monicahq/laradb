@@ -2,11 +2,11 @@
 
 namespace LaraDb\Controllers;
 
+use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Schema;
 use LaraDb\Helpers\DatabaseViewHelper;
 use LaraDb\Models\Table;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Schema;
 
 class DBController extends Controller
 {

@@ -2,9 +2,9 @@
 
 namespace LaraDb;
 
-use LaraDb\View\Components\DBLayout;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\ServiceProvider;
+use LaraDb\View\Components\DBLayout;
 
 class LaraDbServiceProvider extends ServiceProvider
 {
