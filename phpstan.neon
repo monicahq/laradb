@@ -1,0 +1,15 @@
+includes:
+    - ./vendor/larastan/larastan/extension.neon
+    - ./vendor/phpstan/phpstan-phpunit/extension.neon
+    - ./vendor/phpstan/phpstan-deprecation-rules/rules.neon
+    - ./vendor/phpstan/phpstan-strict-rules/rules.neon
+
+parameters:
+    paths:
+        - src
+        - routes
+    inferPrivatePropertyTypeFromConstructor: true
+    level: 5
+    ignoreErrors:
+        - message: '#Variable property access on mixed\.#'
+          path: */Models/Table.php

@@ -1,0 +1,62 @@
+{
+    "name": "monicahq/laradb",
+    "description": "DB explorer for Laravel.",
+    "keywords": [
+        "laravel",
+        "php",
+        "database",
+        "db"
+    ],
+    "type": "library",
+    "license": "MIT",
+    "support": {
+        "issues": "https://github.com/monicahq/laradb/issues",
+        "source": "https://github.com/monicahq/laradb"
+    },
+    "authors": [
+        {
+            "name": "Regis Freyd"
+        },
+        {
+            "name": "Alexis Saettler",
+            "email": "alexis@saettler.org"
+        }
+    ],
+    "require": {
+        "illuminate/support": "^11.0"
+    },
+    "require-dev": {
+        "larastan/larastan": "^1.0 || ^2.0",
+        "orchestra/testbench": "^9.0",
+        "phpstan/phpstan-deprecation-rules": "^1.0",
+        "phpstan/phpstan-phpunit": "^1.0",
+        "phpstan/phpstan-strict-rules": "^1.0",
+        "phpunit/phpunit": "^9.0 || ^10.0 || ^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "LaraDb\\": "src"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "LaraDb\\Tests\\": "tests"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "LaraDb\\LaraDbServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "composer/package-versions-deprecated": true,
+            "ocramius/package-versions": true
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

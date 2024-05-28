@@ -1,0 +1,43 @@
+name: Unit tests
+
+on:
+  push:
+    branches:
+      - main
+      - next
+      - next-major
+      - beta
+      - alpha
+  pull_request:
+    types: [opened, synchronize, reopened]
+  release:
+    types:
+      - created
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  checks: write
+  id-token: write
+
+jobs:
+  tests:
+    name: Run tests
+    uses: monicahq/workflows/.github/workflows/library.yml@v2
+    with:
+      php-versions: "['8.3']"
+      laravel-versions: "['11.*']"
+      default-php-version: '8.3'
+      default-laravel-version: '11.*'
+      matrix-exclude: ""
+      project: monicahq_laradb
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  release:
+    name: Release
+    uses: monicahq/workflows/.github/workflows/release.yml@v2
+    secrets:
+      GH_TOKEN_RELEASE: ${{ secrets.GH_TOKEN_RELEASE }}
+    needs: tests
