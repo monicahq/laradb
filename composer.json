@@ -26,13 +26,13 @@
         "illuminate/support": "^11.0"
     },
     "require-dev": {
-        "larastan/larastan": "^1.0 || ^2.0",
+        "larastan/larastan": "^2.0",
         "laravel/pint": "^1.16",
         "orchestra/testbench": "^9.0",
         "phpstan/phpstan-deprecation-rules": "^1.0",
         "phpstan/phpstan-phpunit": "^1.0",
         "phpstan/phpstan-strict-rules": "^1.0",
-        "phpunit/phpunit": "^9.0 || ^10.0 || ^11.0"
+        "phpunit/phpunit": "^11.0"
     },
     "autoload": {
         "psr-4": {
