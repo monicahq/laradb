@@ -27,9 +27,9 @@ jobs:
     uses: monicahq/workflows/.github/workflows/library.yml@v2
     with:
       php-versions: "['8.3']"
-      laravel-versions: "['11.*']"
+      laravel-versions: "['^11.0']"
       default-php-version: '8.3'
-      default-laravel-version: '11.*'
+      default-laravel-version: '^11.0'
       matrix-exclude: ""
       project: monicahq_laradb
     secrets:
