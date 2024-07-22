@@ -1,0 +1,13 @@
+name: Static analysis
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  statics:
+    name: Static analysis
+    uses: monicahq/workflows/.github/workflows/static.yml@v2
+    with:
+      php-version: 8.3
+      with: phpstan
