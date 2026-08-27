@@ -170,42 +170,6 @@ The fragment endpoint also speaks JSON, with `?format=json` or an
 }
 ```
 
-## How it stays read-only
-
-The interesting part of a database browser is what it refuses to do.
-
-- **No user input ever reaches SQL.** Table names are matched against the list
-  returned by the schema introspection before anything is built. A name that is
-  not in that whitelist raises `UnknownTableException`, which the controller
-  turns into a 404.
-- **Identifiers are quoted per engine** — backticks on MySQL, double quotes on
-  PostgreSQL and SQLite, with the inner quote doubled — so a table named
-  `we"ird` cannot break out of an identifier.
-- **`LIMIT` and `OFFSET` are integers** derived from arithmetic, never
-  interpolated strings.
-- **There is no query box.** The package cannot run arbitrary SQL because it has
-  nowhere to accept it.
-- **Connection errors are sanitised.** PDO messages quote the DSN and the
-  database user, so the page shows `Could not open the [x] connection.` and the
-  real error goes to your log.
-- **Reads go to the read replica** when the connection defines one
-  (`getReadPdo()`).
-- **The database path is shortened.** SQLite reports an absolute file path; the
-  header shows it relative to the project root, or as the bare file name when
-  it lives outside. Where your server keeps its files is not the page's story
-  to tell.
-
-## Row counts
-
-The sidebar shows an *estimate*: `information_schema.tables.TABLE_ROWS` on
-MySQL, `pg_class.reltuples` on PostgreSQL. That keeps listing a large schema
-cheap, and it is why the number can drift — and why a PostgreSQL table that has
-never been `ANALYZE`d shows no count at all rather than a wrong one. SQLite,
-whose databases are usually small, counts exactly.
-
-The number driving the pagination is always an exact `COUNT(*)` on the selected
-table.
-
 ## Using the core without Laravel
 
 The reading side depends on nothing but PDO, so it works anywhere:
@@ -271,13 +235,6 @@ The MySQL and PostgreSQL suites skip themselves unless a server is reachable;
 point them at one with `LARADB_MYSQL_DSN` / `LARADB_PGSQL_DSN` (plus the
 matching `_USERNAME` and `_PASSWORD`). CI runs them against real services on
 every push.
-
-## Roadmap
-
-Deliberately out of scope for v1: column search and filters, sorting, following
-a foreign key through to the row it points at (the badge names the target, but
-it is not a link), CSV/JSON export, row editing behind a permission, dark mode,
-and picking between several configured connections from the UI.
 
 ## Contributing
 
