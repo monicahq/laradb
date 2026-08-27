@@ -1,12 +1,6 @@
 ![LaraDb](github/banner.webp)
 
-# LaraDb
-
-[![Unit tests](https://github.com/monicahq/laradb/actions/workflows/tests.yml/badge.svg)](https://github.com/monicahq/laradb/actions/workflows/tests.yml)
-[![Database integration](https://github.com/monicahq/laradb/actions/workflows/integration.yml/badge.svg)](https://github.com/monicahq/laradb/actions/workflows/integration.yml)
-[![Static analysis](https://github.com/monicahq/laradb/actions/workflows/static.yml/badge.svg)](https://github.com/monicahq/laradb/actions/workflows/static.yml)
-[![Latest Version on Packagist](https://img.shields.io/packagist/v/monicahq/laradb.svg)](https://packagist.org/packages/monicahq/laradb)
-[![License](https://img.shields.io/packagist/l/monicahq/laradb.svg)](LICENSE)
+# LaraDB — A read-only database browser for Laravel.
 
 A read-only database browser you drop into a Laravel application.
 
@@ -16,10 +10,7 @@ write access.
 
 Works with **MySQL / MariaDB**, **PostgreSQL** and **SQLite**.
 
-The page ships its own CSS and JavaScript. No build step, no Tailwind, no
-Alpine, no CDN: the only remote request is a webfont, and the layout is intact
-without it. Publishing the views with `--tag=laradb-views` gives you the whole
-thing in one file to edit.
+The page ships its own CSS and JavaScript.
 
 ---
 
