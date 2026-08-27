@@ -1,17 +1,32 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" backupGlobals="false" backupStaticAttributes="false" beStrictAboutTestsThatDoNotTestAnything="true" bootstrap="vendor/autoload.php" colors="true" convertErrorsToExceptions="true" convertNoticesToExceptions="true" convertWarningsToExceptions="true" processIsolation="false" stopOnError="false" stopOnFailure="false" xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.3/phpunit.xsd">
-  <coverage processUncoveredFiles="true">
-    <include>
-      <directory suffix=".php">./src</directory>
-    </include>
-  </coverage>
-  <testsuites>
-    <testsuite name="Unit Tests">
-      <directory suffix="Test.php">./tests</directory>
-    </testsuite>
-  </testsuites>
-  <php>
-    <env name="APP_ENV" value="testing"/>
-    <env name="APP_KEY" value="base64:uA/XEme0vpegJz/rKSk3ys2uzEfXZA0Ca2P0e1M8vRU="/>
-  </php>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache"
+         failOnWarning="true"
+         failOnRisky="true"
+         beStrictAboutOutputDuringTests="true"
+         beStrictAboutTestsThatDoNotTestAnything="true">
+    <testsuites>
+        <testsuite name="Unit">
+            <directory suffix="Test.php">tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory suffix="Test.php">tests/Feature</directory>
+        </testsuite>
+        <!-- Skipped unless a MySQL / PostgreSQL server is reachable. -->
+        <testsuite name="Integration">
+            <directory suffix="Test.php">tests/Integration</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory suffix=".php">src</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_KEY" value="base64:uA/XEme0vpegJz/rKSk3ys2uzEfXZA0Ca2P0e1M8vRU="/>
+    </php>
 </phpunit>
