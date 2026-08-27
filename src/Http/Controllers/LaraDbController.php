@@ -12,10 +12,13 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use LaraDb\Drivers\DriverInterface;
+use LaraDb\DTO\DatabaseInfo;
 use LaraDb\DTO\TableInfo;
 use LaraDb\Exceptions\ConnectionFailedException;
 use LaraDb\Exceptions\LaraDbException;
 use LaraDb\Exceptions\UnknownTableException;
+use LaraDb\Support\DatabasePath;
+use LaraDb\Support\Runtime;
 use LaraDb\Support\ValuePresenter;
 use Throwable;
 
@@ -51,6 +54,8 @@ final class LaraDbController
                 'selected' => null,
                 'page' => null,
                 'error' => null,
+                'database' => $this->describe($driver),
+                'queries' => $driver->queryCount(),
             ]);
         }
 
@@ -64,6 +69,8 @@ final class LaraDbController
                 'selected' => $selected,
                 'page' => null,
                 'error' => $e->getMessage(),
+                'database' => $this->describe($driver),
+                'queries' => $driver->queryCount(),
             ]);
         }
 
@@ -72,6 +79,8 @@ final class LaraDbController
             'selected' => $selected,
             'page' => $page,
             'error' => null,
+            'database' => $this->describe($driver),
+            'queries' => $driver->queryCount(),
         ]);
     }
 
@@ -124,6 +133,27 @@ final class LaraDbController
             // it can show without quoting the DSN back at the visitor.
             throw ConnectionFailedException::forConnection($this->connectionName(), $e);
         }
+    }
+
+    /**
+     * The database description, with the name shortened for display: a driver
+     * reports the raw file path, and that is not something to put in a page.
+     */
+    private function describe(DriverInterface $driver): DatabaseInfo
+    {
+        $info = $driver->describe();
+
+        $basePath = $this->container->bound('path.base') ? $this->container->make('path.base') : null;
+
+        return new DatabaseInfo(
+            engine: $info->engine,
+            version: $info->version,
+            name: DatabasePath::shorten($info->name, is_string($basePath) ? $basePath : null),
+            tableCount: $info->tableCount,
+            indexCount: $info->indexCount,
+            sizeInBytes: $info->sizeInBytes,
+            metadata: $info->metadata,
+        );
     }
 
     private function connectionName(): string
@@ -224,6 +254,12 @@ final class LaraDbController
 
         // The connection *name*, never its credentials.
         $data['connection'] = $this->connectionName();
+
+        // The chrome is decoration: it renders with whatever it is given, and
+        // an error page that never reached a driver is given nothing.
+        $data['database'] ??= null;
+        $data['queries'] ??= null;
+        $data['runtime'] = Runtime::detect($this->container);
 
         return $data;
     }

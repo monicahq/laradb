@@ -27,15 +27,17 @@ final class PostgresDriverTest extends IntegrationTestCase
     protected function schemaStatements(): array
     {
         return [
-            'CREATE TABLE laradb_posts (
-                id SERIAL PRIMARY KEY,
-                title VARCHAR(255) NOT NULL,
-                body TEXT NULL
-            )',
             'CREATE TABLE laradb_tags (
                 id SERIAL PRIMARY KEY,
                 label VARCHAR(255) NULL
             )',
+            'CREATE TABLE laradb_posts (
+                id SERIAL PRIMARY KEY,
+                tag_id INTEGER NULL REFERENCES laradb_tags (id),
+                title VARCHAR(255) NOT NULL,
+                body TEXT NULL
+            )',
+            'CREATE INDEX laradb_posts_title_index ON laradb_posts (title)',
         ];
     }
 
@@ -47,5 +49,13 @@ final class PostgresDriverTest extends IntegrationTestCase
     protected function expectedQuotedIdentifier(): string
     {
         return '"laradb_posts"';
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function expectedMetadataKeys(): array
+    {
+        return ['enc', 'collation', 'schema'];
     }
 }

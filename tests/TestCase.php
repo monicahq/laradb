@@ -79,11 +79,21 @@ abstract class TestCase extends Orchestra
 
     protected function createTestSchema(): void
     {
+        Schema::create('accounts', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('label');
+        });
+
         Schema::create('users', function (Blueprint $table): void {
             $table->increments('id');
+            // A real foreign key, so the viewer has one to badge.
+            $table->unsignedInteger('account_id')->nullable();
             $table->string('name');
             $table->string('email')->nullable();
             $table->timestamps();
+
+            $table->index('email');
+            $table->foreign('account_id')->references('id')->on('accounts');
         });
 
         Schema::create('empty_table', function (Blueprint $table): void {
@@ -91,8 +101,11 @@ abstract class TestCase extends Orchestra
             $table->string('label')->nullable();
         });
 
+        DB::table('accounts')->insert([['label' => 'Acme'], ['label' => 'Globex']]);
+
         DB::table('users')->insert(
             array_map(static fn (int $i): array => [
+                'account_id' => $i % 2 === 0 ? 1 : 2,
                 'name' => 'User '.$i,
                 'email' => $i % 3 === 0 ? null : 'user'.$i.'@example.test',
                 'created_at' => '2026-01-01 10:00:00',

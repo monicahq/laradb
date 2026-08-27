@@ -35,6 +35,13 @@ abstract class IntegrationTestCase extends TestCase
 
     abstract protected function expectedQuotedIdentifier(): string;
 
+    /**
+     * The engine settings this driver is expected to report, in order.
+     *
+     * @return list<string>
+     */
+    abstract protected function expectedMetadataKeys(): array;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -98,12 +105,51 @@ abstract class IntegrationTestCase extends TestCase
     {
         $columns = $this->driver->getColumns('laradb_posts');
 
-        $this->assertSame(['id', 'title', 'body'], array_map(static fn ($c): string => $c->name, $columns));
+        $this->assertSame(['id', 'tag_id', 'title', 'body'], array_map(static fn ($c): string => $c->name, $columns));
         $this->assertTrue($columns[0]->primaryKey);
-        $this->assertFalse($columns[1]->primaryKey);
-        $this->assertFalse($columns[1]->nullable);
-        $this->assertTrue($columns[2]->nullable);
-        $this->assertNotSame('', $columns[1]->type);
+        $this->assertFalse($columns[2]->primaryKey);
+        $this->assertFalse($columns[2]->nullable);
+        $this->assertTrue($columns[3]->nullable);
+        $this->assertNotSame('', $columns[2]->type);
+    }
+
+    public function test_it_points_a_column_at_the_one_it_references(): void
+    {
+        $columns = $this->driver->getColumns('laradb_posts');
+
+        $this->assertNull($columns[0]->foreignKey);
+        $this->assertSame('laradb_tags.id', $columns[1]->foreignKey);
+        $this->assertSame(['tag_id' => 'laradb_tags.id'], $this->driver->getForeignKeys('laradb_posts'));
+        $this->assertSame([], $this->driver->getForeignKeys('laradb_tags'));
+    }
+
+    public function test_it_describes_the_database(): void
+    {
+        $info = $this->driver->describe();
+
+        $this->assertSame($this->expectedEngineName(), $info->engine);
+
+        // Versions, sizes and index counts depend on the server the suite
+        // happens to be pointed at, so only their shape is asserted.
+        $this->assertNotNull($info->version);
+        $this->assertMatchesRegularExpression('/^\d+\./', $info->version);
+        $this->assertNotNull($info->name);
+        $this->assertNotSame('', $info->name);
+        $this->assertGreaterThanOrEqual(2, $info->tableCount);
+        $this->assertNotNull($info->indexCount);
+        $this->assertGreaterThan(0, $info->indexCount);
+        $this->assertNotNull($info->sizeInBytes);
+        $this->assertGreaterThan(0, $info->sizeInBytes);
+    }
+
+    public function test_it_reports_the_engine_settings(): void
+    {
+        $metadata = $this->driver->metadata();
+
+        foreach ($this->expectedMetadataKeys() as $key) {
+            $this->assertArrayHasKey($key, $metadata);
+            $this->assertNotSame('', $metadata[$key]);
+        }
     }
 
     public function test_it_counts_rows_exactly(): void
@@ -116,6 +162,8 @@ abstract class IntegrationTestCase extends TestCase
     {
         $page = $this->driver->getRows('laradb_posts', 2, 3);
 
+        $this->assertStringContainsString('LIMIT 3 OFFSET 3', $page->sql);
+        $this->assertGreaterThan(0.0, $page->durationMs);
         $this->assertSame(2, $page->page);
         $this->assertSame(7, $page->total);
         $this->assertSame(3, $page->lastPage());

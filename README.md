@@ -6,15 +6,26 @@
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/monicahq/laradb.svg)](https://packagist.org/packages/monicahq/laradb)
 [![License](https://img.shields.io/packagist/l/monicahq/laradb.svg)](LICENSE)
 
-A read-only database browser you drop into a Laravel application. Install it,
-open `/db`, and get your tables on the left and their rows on the right — a
-small phpMyAdmin, without the server, the login screen, or the write access.
+A read-only database browser you drop into a Laravel application.
+
+Install it, open `/db`, and get your tables on the left and their rows on the
+right — a small phpMyAdmin, without the server, the login screen, or the
+write access.
 
 Works with **MySQL / MariaDB**, **PostgreSQL** and **SQLite**.
 
-<!-- TODO: add art/screenshot.png and uncomment
-![Screenshot](art/screenshot.png)
--->
+It reads like a console rather than an admin panel. Every table in the schema is
+in the sidebar with its row count; the grid shows the columns with their types
+and their `PK` / `FK` badges, the row numbers, and `NULL` as something you can
+tell apart from an empty string. Around it, the chrome tells you where you are:
+the engine and its version, the database being browsed, its size and index
+count, the settings the engine reports for itself, and — for the page you are
+looking at — the statement that produced it and how long it took.
+
+The page ships its own CSS and JavaScript. No build step, no Tailwind, no
+Alpine, no CDN: the only remote request is a webfont, and the layout is intact
+without it. Publishing the views with `--tag=laradb-views` gives you the whole
+thing in one file to edit.
 
 ---
 
@@ -50,23 +61,6 @@ composer require --dev monicahq/laradb
 The service provider is auto-discovered. In a `local` environment, that is all
 you need: visit `/db`.
 
-`--dev` matters. A production deploy running `composer install --no-dev` then
-leaves the viewer out of the build entirely — its code is not on the server, so
-there is nothing to misconfigure, no route to reach and no flag to get wrong.
-That is a stronger guarantee than the `enabled` switch, which is only a second
-line of defence.
-
-If you deliberately want it on a deployed environment — a staging box, an
-internal admin tool — move it to `require` instead, and treat
-[Locking it down](#locking-it-down) as mandatory rather than advisory:
-
-```bash
-composer require monicahq/laradb
-```
-
-The package behaves identically either way; the difference is only whether the
-code ships.
-
 Publish the config to change anything:
 
 ```bash
@@ -78,6 +72,11 @@ The views can be published too, if you want to restyle them:
 ```bash
 php artisan vendor:publish --tag=laradb-views
 ```
+
+## Usage
+
+Simply go to `/db` URL in your project, and the screen will shown. You can
+configure this URL - see section below.
 
 ## Configuration
 
@@ -139,12 +138,17 @@ The fragment endpoint also speaks JSON, with `?format=json` or an
 ```json
 {
   "table": "users",
-  "columns": [{"name": "id", "type": "integer", "nullable": false, "primary_key": true, "default": null}],
-  "rows": [{"id": 1, "name": "Ada"}],
+  "columns": [
+    {"name": "id", "type": "integer", "nullable": false, "primary_key": true, "default": null, "foreign_key": null},
+    {"name": "account_id", "type": "integer", "nullable": true, "primary_key": false, "default": null, "foreign_key": "accounts.id"}
+  ],
+  "rows": [{"id": 1, "account_id": 3, "name": "Ada"}],
   "page": 1,
   "per_page": 25,
   "total": 42,
-  "last_page": 2
+  "last_page": 2,
+  "sql": "SELECT * FROM \"users\" LIMIT 25 OFFSET 0",
+  "duration_ms": 0.42
 }
 ```
 
@@ -168,6 +172,10 @@ The interesting part of a database browser is what it refuses to do.
   real error goes to your log.
 - **Reads go to the read replica** when the connection defines one
   (`getReadPdo()`).
+- **The database path is shortened.** SQLite reports an absolute file path; the
+  header shows it relative to the project root, or as the bare file name when
+  it lives outside. Where your server keeps its files is not the page's story
+  to tell.
 
 ## Row counts
 
@@ -200,14 +208,38 @@ $page = $driver->getRows('users', page: 2, perPage: 25);
 `DriverInterface` is the package's public contract:
 
 ```php
+// Reading
 public function listTables(): array;                                     // TableInfo[]
 public function getColumns(string $table): array;                        // ColumnInfo[]
 public function getRowCount(string $table): int;
 public function getRows(string $table, int $page, int $perPage): TablePage;
 public function name(): string;
+
+// Describing — everything the chrome is built from
+public function serverVersion(): ?string;
+public function databaseName(): ?string;      // the db name, or the sqlite file
+public function sizeInBytes(): ?int;
+public function indexCount(): ?int;
+public function metadata(): array;            // engine settings, in display order
+public function getForeignKeys(string $table): array;  // column => "table.column"
+public function describe(): DatabaseInfo;     // all of the above, gathered once
+public function queryCount(): int;
 ```
 
-Any change to it is a breaking change and gets a major version bump.
+The describing half is nullable throughout, and deliberately so: reading a
+system catalogue is a privilege. A connection whose user cannot do it gets a
+working viewer with a quieter header, never a 500.
+
+What each engine reports for `metadata()`:
+
+| | Keys |
+| --- | --- |
+| SQLite | `page`, `journal`, `enc`, `fk`, `schema` |
+| MySQL | `engine`, `charset`, `collation` |
+| PostgreSQL | `enc`, `collation`, `schema` |
+
+Any change to `DriverInterface` is a breaking change and gets a major version
+bump.
 
 ## Testing
 
@@ -224,9 +256,10 @@ every push.
 
 ## Roadmap
 
-Deliberately out of scope for v1: column search and filters, sorting, foreign
-key navigation, CSV/JSON export, row editing behind a permission, dark mode, and
-picking between several configured connections from the UI.
+Deliberately out of scope for v1: column search and filters, sorting, following
+a foreign key through to the row it points at (the badge names the target, but
+it is not a link), CSV/JSON export, row editing behind a permission, dark mode,
+and picking between several configured connections from the UI.
 
 ## Contributing
 

@@ -8,6 +8,7 @@ use LaraDb\Drivers\SqliteDriver;
 use LaraDb\Exceptions\UnknownTableException;
 use PDO;
 use PHPUnit\Framework\TestCase;
+use SQLite3;
 
 /**
  * The reading core is framework-agnostic, so it is tested against a bare PDO
@@ -25,8 +26,16 @@ final class SqliteDriverTest extends TestCase
 
         $this->pdo = new PDO('sqlite::memory:');
         $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $this->pdo->exec('CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT NOT NULL, body TEXT)');
         $this->pdo->exec('CREATE TABLE tags (id INTEGER PRIMARY KEY, label TEXT)');
+        $this->pdo->exec(
+            'CREATE TABLE posts (
+                id INTEGER PRIMARY KEY,
+                tag_id INTEGER REFERENCES tags (id),
+                title TEXT NOT NULL,
+                body TEXT
+            )'
+        );
+        $this->pdo->exec('CREATE INDEX posts_title_index ON posts (title)');
 
         for ($i = 1; $i <= 7; $i++) {
             $this->pdo->exec("INSERT INTO posts (title, body) VALUES ('Post {$i}', 'Body {$i}')");
@@ -65,12 +74,67 @@ final class SqliteDriverTest extends TestCase
     {
         $columns = $this->driver->getColumns('posts');
 
-        $this->assertSame(['id', 'title', 'body'], array_map(static fn ($c): string => $c->name, $columns));
+        $this->assertSame(['id', 'tag_id', 'title', 'body'], array_map(static fn ($c): string => $c->name, $columns));
         $this->assertTrue($columns[0]->primaryKey);
-        $this->assertFalse($columns[1]->primaryKey);
-        $this->assertFalse($columns[1]->nullable);
-        $this->assertTrue($columns[2]->nullable);
-        $this->assertSame('TEXT', $columns[1]->type);
+        $this->assertFalse($columns[2]->primaryKey);
+        $this->assertFalse($columns[2]->nullable);
+        $this->assertTrue($columns[3]->nullable);
+        $this->assertSame('TEXT', $columns[2]->type);
+    }
+
+    public function test_it_points_a_column_at_the_one_it_references(): void
+    {
+        $columns = $this->driver->getColumns('posts');
+
+        $this->assertNull($columns[0]->foreignKey);
+        $this->assertSame('tags.id', $columns[1]->foreignKey);
+        $this->assertSame(['tag_id' => 'tags.id'], $this->driver->getForeignKeys('posts'));
+        $this->assertSame([], $this->driver->getForeignKeys('tags'));
+    }
+
+    public function test_it_describes_the_database(): void
+    {
+        $info = $this->driver->describe();
+
+        $this->assertSame('sqlite', $info->engine);
+        $this->assertSame(SQLite3::version()['versionString'], $info->version);
+        $this->assertSame(':memory:', $info->name);
+        $this->assertSame(2, $info->tableCount);
+        // The one we declared; SQLite's own autoindexes are not ours to count.
+        $this->assertSame(1, $info->indexCount);
+        $this->assertNotNull($info->sizeInBytes);
+        $this->assertGreaterThan(0, $info->sizeInBytes);
+        $this->assertNotNull($info->formattedSize());
+    }
+
+    public function test_it_reports_the_engine_settings(): void
+    {
+        $metadata = $this->driver->metadata();
+
+        $this->assertArrayHasKey('page', $metadata);
+        $this->assertArrayHasKey('journal', $metadata);
+        $this->assertArrayHasKey('enc', $metadata);
+        $this->assertSame('UTF-8', $metadata['enc']);
+        $this->assertContains($metadata['fk'], ['on', 'off']);
+    }
+
+    public function test_it_describes_the_database_only_once(): void
+    {
+        $this->driver->describe();
+        $afterFirst = $this->driver->queryCount();
+
+        $this->driver->describe();
+
+        $this->assertSame($afterFirst, $this->driver->queryCount());
+    }
+
+    public function test_it_counts_the_statements_it_runs(): void
+    {
+        $before = $this->driver->queryCount();
+
+        $this->driver->getRowCount('posts');
+
+        $this->assertGreaterThan($before, $this->driver->queryCount());
     }
 
     public function test_it_counts_rows_exactly(): void
@@ -84,6 +148,8 @@ final class SqliteDriverTest extends TestCase
         $page = $this->driver->getRows('posts', 2, 3);
 
         $this->assertSame('posts', $page->table);
+        $this->assertSame('SELECT * FROM "posts" LIMIT 3 OFFSET 3', $page->sql);
+        $this->assertGreaterThan(0.0, $page->durationMs);
         $this->assertSame(2, $page->page);
         $this->assertSame(3, $page->perPage);
         $this->assertSame(7, $page->total);
@@ -137,7 +203,7 @@ final class SqliteDriverTest extends TestCase
 
     public function test_it_refuses_an_unknown_table_for_every_read_method(): void
     {
-        foreach (['getColumns', 'getRowCount'] as $method) {
+        foreach (['getColumns', 'getRowCount', 'getForeignKeys'] as $method) {
             try {
                 $this->driver->{$method}('does_not_exist');
                 $this->fail($method.'() accepted an unknown table.');

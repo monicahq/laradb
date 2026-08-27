@@ -79,6 +79,57 @@ final class TablePageTest extends TestCase
             'nullable' => false,
             'primary_key' => true,
             'default' => null,
+            'foreign_key' => null,
         ], $array['columns'][0]);
+        $this->assertSame('', $array['sql']);
+        $this->assertSame(0.0, $array['duration_ms']);
+    }
+
+    public function test_it_carries_the_statement_that_produced_it(): void
+    {
+        $page = new TablePage(
+            table: 'posts',
+            columns: [new ColumnInfo('id', 'integer', false, true)],
+            rows: [['id' => 1]],
+            page: 1,
+            perPage: 10,
+            total: 1,
+            sql: 'SELECT * FROM "posts" LIMIT 10 OFFSET 0',
+            durationMs: 1.25,
+        );
+
+        $this->assertSame('SELECT * FROM "posts" LIMIT 10 OFFSET 0', $page->toArray()['sql']);
+        $this->assertSame(1.25, $page->toArray()['duration_ms']);
+    }
+
+    public function test_it_names_the_primary_key(): void
+    {
+        $this->assertSame('id', $this->page(1, 10)->primaryKey());
+
+        $composite = new TablePage(
+            table: 'taggables',
+            columns: [
+                new ColumnInfo('tag_id', 'integer', false, true),
+                new ColumnInfo('taggable_id', 'integer', false, true),
+                new ColumnInfo('note', 'text'),
+            ],
+            rows: [],
+            page: 1,
+            perPage: 10,
+            total: 0,
+        );
+
+        $this->assertSame('tag_id, taggable_id', $composite->primaryKey());
+
+        $none = new TablePage(
+            table: 'logs',
+            columns: [new ColumnInfo('message', 'text')],
+            rows: [],
+            page: 1,
+            perPage: 10,
+            total: 0,
+        );
+
+        $this->assertNull($none->primaryKey());
     }
 }

@@ -27,15 +27,18 @@ final class MySqlDriverTest extends IntegrationTestCase
     protected function schemaStatements(): array
     {
         return [
-            'CREATE TABLE laradb_posts (
-                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-                title VARCHAR(255) NOT NULL,
-                body TEXT NULL
-            )',
             'CREATE TABLE laradb_tags (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 label VARCHAR(255) NULL
             )',
+            'CREATE TABLE laradb_posts (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                tag_id INT UNSIGNED NULL,
+                title VARCHAR(255) NOT NULL,
+                body TEXT NULL,
+                CONSTRAINT laradb_posts_tag_id_foreign FOREIGN KEY (tag_id) REFERENCES laradb_tags (id)
+            )',
+            'CREATE INDEX laradb_posts_title_index ON laradb_posts (title)',
         ];
     }
 
@@ -47,5 +50,13 @@ final class MySqlDriverTest extends IntegrationTestCase
     protected function expectedQuotedIdentifier(): string
     {
         return '`laradb_posts`';
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function expectedMetadataKeys(): array
+    {
+        return ['engine', 'charset', 'collation'];
     }
 }

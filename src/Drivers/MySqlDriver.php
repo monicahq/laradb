@@ -40,10 +40,8 @@ final class MySqlDriver extends AbstractDriver
         ), $rows);
     }
 
-    public function getColumns(string $table): array
+    protected function fetchColumns(string $table): array
     {
-        $this->assertTableExists($table);
-
         $rows = $this->select(
             'SELECT COLUMN_NAME AS name, COLUMN_TYPE AS type, IS_NULLABLE AS nullable,
                     COLUMN_KEY AS column_key, COLUMN_DEFAULT AS column_default
@@ -60,5 +58,87 @@ final class MySqlDriver extends AbstractDriver
             primaryKey: strtoupper((string) ($row['column_key'] ?? '')) === 'PRI',
             default: isset($row['column_default']) ? (string) $row['column_default'] : null,
         ), $rows);
+    }
+
+    protected function fetchForeignKeys(string $table): array
+    {
+        $rows = $this->select(
+            'SELECT COLUMN_NAME AS name,
+                    REFERENCED_TABLE_NAME AS referenced_table,
+                    REFERENCED_COLUMN_NAME AS referenced_column
+             FROM information_schema.key_column_usage
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = :table
+               AND REFERENCED_TABLE_NAME IS NOT NULL
+             ORDER BY ORDINAL_POSITION ASC',
+            ['table' => $table],
+        );
+
+        $references = [];
+
+        foreach ($rows as $row) {
+            $references[(string) $row['name']] = sprintf(
+                '%s.%s',
+                (string) $row['referenced_table'],
+                (string) $row['referenced_column'],
+            );
+        }
+
+        return $references;
+    }
+
+    public function serverVersion(): ?string
+    {
+        return $this->introspect(function (): ?string {
+            $version = $this->scalar('SELECT VERSION()');
+
+            if ($version === null) {
+                return null;
+            }
+
+            // MariaDB prefixes its version with a fake "5.5.5-" so that old
+            // clients keep talking to it. Drop that before anything else.
+            $version = preg_replace('/^5\.5\.5-(?=\d)/', '', $version) ?? $version;
+
+            // Distributions then append their own build suffix
+            // ("8.4.0-0ubuntu0.24.04.1"); the number is the useful part.
+            return explode('-', $version)[0];
+        });
+    }
+
+    public function databaseName(): ?string
+    {
+        return $this->introspect(fn (): ?string => $this->scalar('SELECT DATABASE()'));
+    }
+
+    public function sizeInBytes(): ?int
+    {
+        return $this->introspect(fn (): ?int => $this->integer(
+            'SELECT COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH), 0)
+             FROM information_schema.tables
+             WHERE TABLE_SCHEMA = DATABASE()'
+        ));
+    }
+
+    public function indexCount(): ?int
+    {
+        // Every index shows up once per column it covers, so the composite
+        // ones have to be collapsed before counting.
+        return $this->introspect(fn (): ?int => $this->integer(
+            'SELECT COUNT(*) FROM (
+                 SELECT DISTINCT TABLE_NAME, INDEX_NAME
+                 FROM information_schema.statistics
+                 WHERE TABLE_SCHEMA = DATABASE()
+             ) AS laradb_index_names'
+        ));
+    }
+
+    public function metadata(): array
+    {
+        return $this->introspect(fn (): array => array_filter([
+            'engine' => $this->scalar('SELECT @@default_storage_engine'),
+            'charset' => $this->scalar('SELECT @@character_set_database'),
+            'collation' => $this->scalar('SELECT @@collation_database'),
+        ], static fn (?string $value): bool => $value !== null && $value !== '')) ?? [];
     }
 }
