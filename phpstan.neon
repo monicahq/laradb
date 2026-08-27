@@ -5,11 +5,13 @@ includes:
     - ./vendor/phpstan/phpstan-strict-rules/rules.neon
 
 parameters:
+    level: 8
+    inferPrivatePropertyTypeFromConstructor: true
+
+    # `config/` is left out on purpose: it is a package config file, published
+    # into the application's own config directory, so the `env()` calls in it
+    # are correct — but Larastan resolves "the config directory" as the host
+    # application's and flags every one of them.
     paths:
         - src
         - routes
-    inferPrivatePropertyTypeFromConstructor: true
-    level: 5
-    ignoreErrors:
-        - message: '#Variable property access on mixed\.#'
-          path: */Models/Table.php

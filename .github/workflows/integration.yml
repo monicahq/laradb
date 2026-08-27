@@ -1,0 +1,106 @@
+name: Database integration
+
+# The reusable workflow in tests.yml covers the default matrix. This one adds
+# what a database browser actually needs: several PHP and Laravel versions, and
+# real MySQL and PostgreSQL servers for the driver suites.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: Database integration ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  matrix:
+    name: PHP ${{ matrix.php }} · Laravel ${{ matrix.laravel }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.2', '8.3', '8.4']
+        laravel: ['10.*', '11.*', '12.*']
+        include:
+          - laravel: '10.*'
+            testbench: '8.*'
+          - laravel: '11.*'
+            testbench: '9.*'
+          - laravel: '12.*'
+            testbench: '10.*'
+        exclude:
+          # Laravel 10 predates PHP 8.4; Laravel 11 and 12 need PHP 8.2+.
+          - laravel: '10.*'
+            php: '8.4'
+          - laravel: '11.*'
+            php: '8.1'
+          - laravel: '12.*'
+            php: '8.1'
+
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: laradb_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -ppassword"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: laradb_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd=pg_isready
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      LARADB_MYSQL_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=laradb_test'
+      LARADB_MYSQL_USERNAME: root
+      LARADB_MYSQL_PASSWORD: password
+      LARADB_PGSQL_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=laradb_test'
+      LARADB_PGSQL_USERNAME: postgres
+      LARADB_PGSQL_PASSWORD: password
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo, pdo_sqlite, pdo_mysql, pdo_pgsql, mbstring
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require \
+            "illuminate/support:${{ matrix.laravel }}" \
+            "orchestra/testbench:${{ matrix.testbench }}" \
+            --no-interaction --no-update
+          composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Run the whole suite
+        run: vendor/bin/phpunit
+
+      - name: Fail if the database suites did not actually run
+        run: |
+          vendor/bin/phpunit --testsuite Integration --do-not-cache-result | tee integration.log
+          if grep -q "Skipped" integration.log; then
+            echo "::error::MySQL/PostgreSQL suites were skipped — the services were not reachable."
+            exit 1
+          fi
