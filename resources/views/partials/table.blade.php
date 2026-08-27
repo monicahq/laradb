@@ -1,7 +1,6 @@
 @php
-    $base = url($routePrefix);
-    $pageUrl = static fn (int $number): string => $base.'?table='.urlencode($page->table).'&page='.$number;
     $primaryKey = $page->primaryKey();
+    $filter = $page->filter;
 @endphp
 
 {{-- What this table is, and what it cost to read --}}
@@ -16,6 +15,21 @@
             · pk {{ $primaryKey }}
         @endif
     </span>
+
+    @if ($filter !== null)
+        <span class="ldb-chip">
+            @if ($from !== null)
+                <span class="ldb-chip__from">← {{ $from }}</span>
+            @endif
+            <span class="ldb-chip__test">{{ $filter->column }} = {{ $filter->value }}</span>
+            <a class="ldb-chip__clear"
+               href="{{ $url->page($page->table) }}"
+               data-laradb-fragment="{{ $url->fragment($page->table) }}"
+               data-laradb-table="{{ $page->table }}"
+               title="Show the whole table"
+               aria-label="Clear the filter">✕</a>
+        </span>
+    @endif
 
     <span class="ldb-spacer"></span>
 
@@ -36,12 +50,27 @@
 @if ($page->isEmpty())
     <div class="ldb-empty">
         <div>
-            <p class="ldb-empty__title">This table is empty</p>
-            <p class="ldb-empty__hint">
-                <span class="ldb-mono">{{ $page->table }}</span>
-                has {{ number_format(count($page->columns)) }} {{ count($page->columns) === 1 ? 'column' : 'columns' }}
-                and no rows.
-            </p>
+            @if ($filter !== null)
+                {{-- A filter that matches nothing is a different story from an
+                     empty table, and the way out of it is different too. --}}
+                <p class="ldb-empty__title">No row matches</p>
+                <p class="ldb-empty__hint">
+                    Nothing in <span class="ldb-mono">{{ $page->table }}</span> has
+                    <span class="ldb-mono">{{ $filter->column }} = {{ $filter->value }}</span>.
+                </p>
+                <p class="ldb-empty__hint">
+                    <a href="{{ $url->page($page->table) }}"
+                       data-laradb-fragment="{{ $url->fragment($page->table) }}"
+                       data-laradb-table="{{ $page->table }}">Show the whole table</a>
+                </p>
+            @else
+                <p class="ldb-empty__title">This table is empty</p>
+                <p class="ldb-empty__hint">
+                    <span class="ldb-mono">{{ $page->table }}</span>
+                    has {{ number_format(count($page->columns)) }} {{ count($page->columns) === 1 ? 'column' : 'columns' }}
+                    and no rows.
+                </p>
+            @endif
         </div>
     </div>
 @else
@@ -80,6 +109,17 @@
                             <td @if ($presenter->isTruncated($value)) title="{{ $presenter->full($value) }}" @endif>
                                 @if ($presenter->isNull($value))
                                     <span class="ldb-null">NULL</span>
+                                @elseif ($column->foreignKey !== null)
+                                    @php
+                                        [$targetTable, $targetColumn] = explode('.', $column->foreignKey, 2);
+                                        $reference = new \LaraDb\DTO\RowFilter($targetColumn, $presenter->full($value));
+                                        $origin = $page->table.'.'.$column->name;
+                                    @endphp
+                                    <a class="ldb-ref"
+                                       href="{{ $url->page($targetTable, 1, $reference, $origin) }}"
+                                       data-laradb-fragment="{{ $url->fragment($targetTable, 1, $reference, $origin) }}"
+                                       data-laradb-table="{{ $targetTable }}"
+                                       title="Go to {{ $column->foreignKey }} = {{ $presenter->full($value) }}">{{ $presenter->display($value) }}</a>
                                 @else
                                     {{ $presenter->display($value) }}
                                 @endif
@@ -103,8 +143,11 @@
     {{-- Pagination --}}
     @if ($page->lastPage() > 1)
         <nav class="ldb-pager" aria-label="Pagination">
-            <a href="{{ $pageUrl($page->page - 1) }}"
-               @if ($page->hasPreviousPage()) data-laradb-page="{{ $page->page - 1 }}" @endif
+            <a href="{{ $url->page($page->table, $page->page - 1, $filter, $from) }}"
+               @if ($page->hasPreviousPage())
+                   data-laradb-fragment="{{ $url->fragment($page->table, $page->page - 1, $filter, $from) }}"
+                   data-laradb-table="{{ $page->table }}"
+               @endif
                @class(['ldb-pager__step', 'is-disabled' => ! $page->hasPreviousPage()])
                @if (! $page->hasPreviousPage()) aria-disabled="true" tabindex="-1" @endif>
                 ← prev
@@ -117,15 +160,19 @@
                     @elseif ($number === $page->page)
                         <span aria-current="page" class="ldb-pager__page is-current ldb-num">{{ $number }}</span>
                     @else
-                        <a href="{{ $pageUrl($number) }}"
-                           data-laradb-page="{{ $number }}"
+                        <a href="{{ $url->page($page->table, $number, $filter, $from) }}"
+                           data-laradb-fragment="{{ $url->fragment($page->table, $number, $filter, $from) }}"
+                           data-laradb-table="{{ $page->table }}"
                            class="ldb-pager__page ldb-num">{{ $number }}</a>
                     @endif
                 @endforeach
             </div>
 
-            <a href="{{ $pageUrl($page->page + 1) }}"
-               @if ($page->hasNextPage()) data-laradb-page="{{ $page->page + 1 }}" @endif
+            <a href="{{ $url->page($page->table, $page->page + 1, $filter, $from) }}"
+               @if ($page->hasNextPage())
+                   data-laradb-fragment="{{ $url->fragment($page->table, $page->page + 1, $filter, $from) }}"
+                   data-laradb-table="{{ $page->table }}"
+               @endif
                @class(['ldb-pager__step', 'is-disabled' => ! $page->hasNextPage()])
                @if (! $page->hasNextPage()) aria-disabled="true" tabindex="-1" @endif>
                 next →

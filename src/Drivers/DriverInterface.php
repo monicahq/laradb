@@ -6,8 +6,10 @@ namespace LaraDb\Drivers;
 
 use LaraDb\DTO\ColumnInfo;
 use LaraDb\DTO\DatabaseInfo;
+use LaraDb\DTO\RowFilter;
 use LaraDb\DTO\TableInfo;
 use LaraDb\DTO\TablePage;
+use LaraDb\Exceptions\UnknownColumnException;
 use LaraDb\Exceptions\UnknownTableException;
 
 /**
@@ -46,19 +48,26 @@ interface DriverInterface
     public function getColumns(string $table): array;
 
     /**
-     * The exact number of rows in a table.
+     * The exact number of rows in a table, or of the rows a filter selects.
      *
      * @throws UnknownTableException when the table is not in the whitelist
+     * @throws UnknownColumnException when the filter's column is not a
+     *                                foreign key target
      */
-    public function getRowCount(string $table): int;
+    public function getRowCount(string $table, ?RowFilter $filter = null): int;
 
     /**
      * One page of rows. `$page` is 1-indexed and clamped to the available
      * range, so an out-of-bounds page never produces a blank screen.
      *
+     * A filter narrows the page to the rows whose column equals its value —
+     * this is what following a foreign key resolves to.
+     *
      * @throws UnknownTableException when the table is not in the whitelist
+     * @throws UnknownColumnException when the filter's column is not a
+     *                                foreign key target
      */
-    public function getRows(string $table, int $page, int $perPage): TablePage;
+    public function getRows(string $table, int $page, int $perPage, ?RowFilter $filter = null): TablePage;
 
     /**
      * The engine name this driver handles: `mysql`, `pgsql` or `sqlite`.
@@ -104,6 +113,15 @@ interface DriverInterface
      * @throws UnknownTableException when the table is not in the whitelist
      */
     public function getForeignKeys(string $table): array;
+
+    /**
+     * Every (table, column) that a foreign key somewhere in this schema points
+     * at — the set of things it is legal to filter on, and therefore the set
+     * of things a foreign key may be followed to.
+     *
+     * @return array<string, list<string>> table name => column names
+     */
+    public function foreignKeyTargets(): array;
 
     /**
      * Everything above, gathered once.

@@ -6,6 +6,7 @@ namespace LaraDb\Drivers;
 
 use LaraDb\DTO\ColumnInfo;
 use LaraDb\DTO\TableInfo;
+use Throwable;
 
 /**
  * SQLite introspection, via `sqlite_master`, `PRAGMA table_info` and friends.
@@ -68,14 +69,71 @@ final class SqliteDriver extends AbstractDriver
             }
 
             // `to` is NULL when the reference implicitly targets the primary
-            // key of the other table. Naming the table alone is honest there;
-            // resolving it would cost a PRAGMA per foreign key.
-            $column = isset($row['to']) ? (string) $row['to'] : '';
+            // key of the other table. Resolve it, so the badge names a real
+            // column and the link has something to filter on.
+            $column = isset($row['to']) ? (string) $row['to'] : ($this->primaryKeyOf($target) ?? '');
 
-            $references[(string) $row['from']] = $column === '' ? $target : $target.'.'.$column;
+            if ($column === '') {
+                continue;
+            }
+
+            $references[(string) $row['from']] = $target.'.'.$column;
         }
 
         return $references;
+    }
+
+    protected function fetchForeignKeyTargets(): array
+    {
+        // pragma_foreign_key_list() as a table-valued function lets the whole
+        // schema be read in one statement. It landed in SQLite 3.16 (2017);
+        // older builds fall back to walking the tables.
+        try {
+            return $this->groupTargets($this->select(
+                'SELECT DISTINCT f."table" AS target_table, f."to" AS target_column
+                 FROM sqlite_master m
+                 JOIN pragma_foreign_key_list(m.name) f
+                 WHERE m.type = \'table\' AND m.name NOT LIKE \'sqlite_%\'
+                   AND f."to" IS NOT NULL'
+            ));
+        } catch (Throwable) {
+            return $this->targetsByWalkingTables();
+        }
+    }
+
+    /**
+     * The pre-3.16 path, and the one that also picks up references written
+     * without a column, which the query above cannot express.
+     *
+     * @return array<string, list<string>>
+     */
+    private function targetsByWalkingTables(): array
+    {
+        $rows = [];
+
+        foreach ($this->listTables() as $table) {
+            foreach ($this->fetchForeignKeys($table->name) as $reference) {
+                [$target, $column] = explode('.', $reference, 2);
+                $rows[] = ['target_table' => $target, 'target_column' => $column];
+            }
+        }
+
+        return $this->groupTargets($rows);
+    }
+
+    /**
+     * The first primary key column of a table, for references that name a
+     * table without naming a column.
+     */
+    private function primaryKeyOf(string $table): ?string
+    {
+        foreach ($this->select('PRAGMA table_info('.$this->quoteIdentifier($table).')') as $row) {
+            if ((int) ($row['pk'] ?? 0) > 0) {
+                return (string) $row['name'];
+            }
+        }
+
+        return null;
     }
 
     public function serverVersion(): ?string

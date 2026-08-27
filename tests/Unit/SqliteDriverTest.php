@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace LaraDb\Tests\Unit;
 
 use LaraDb\Drivers\SqliteDriver;
+use LaraDb\DTO\RowFilter;
+use LaraDb\Exceptions\UnknownColumnException;
 use LaraDb\Exceptions\UnknownTableException;
 use PDO;
 use PHPUnit\Framework\TestCase;
@@ -90,6 +92,63 @@ final class SqliteDriverTest extends TestCase
         $this->assertSame('tags.id', $columns[1]->foreignKey);
         $this->assertSame(['tag_id' => 'tags.id'], $this->driver->getForeignKeys('posts'));
         $this->assertSame([], $this->driver->getForeignKeys('tags'));
+    }
+
+    public function test_it_lists_the_columns_a_foreign_key_points_at(): void
+    {
+        // posts.tag_id references tags.id, so tags.id — and nothing else — is
+        // a legal thing to follow a foreign key to.
+        $this->assertSame(['tags' => ['id']], $this->driver->foreignKeyTargets());
+    }
+
+    public function test_it_filters_to_the_row_a_foreign_key_points_at(): void
+    {
+        $this->pdo->exec("INSERT INTO tags (id, label) VALUES (7, 'ops'), (8, 'infra')");
+
+        $page = (new SqliteDriver($this->pdo))->getRows('tags', 1, 25, new RowFilter('id', '7'));
+
+        $this->assertSame(1, $page->total);
+        $this->assertCount(1, $page->rows);
+        $this->assertSame('ops', $page->rows[0]['label']);
+        $this->assertNotNull($page->filter);
+        $this->assertSame('id', $page->filter->column);
+        $this->assertSame('7', $page->filter->value);
+    }
+
+    public function test_the_filtered_statement_binds_its_value(): void
+    {
+        $page = $this->driver->getRows('tags', 1, 25, new RowFilter('id', '4242'));
+
+        $this->assertSame('SELECT * FROM "tags" WHERE "id" = :value LIMIT 25 OFFSET 0', $page->sql);
+        $this->assertStringNotContainsString('4242', $page->sql);
+    }
+
+    public function test_a_filtered_count_only_counts_what_matches(): void
+    {
+        $this->pdo->exec("INSERT INTO tags (id, label) VALUES (7, 'ops'), (8, 'infra')");
+        $driver = new SqliteDriver($this->pdo);
+
+        $this->assertSame(2, $driver->getRowCount('tags'));
+        $this->assertSame(1, $driver->getRowCount('tags', new RowFilter('id', '7')));
+    }
+
+    public function test_it_refuses_to_filter_on_a_column_nothing_references(): void
+    {
+        // `title` is a perfectly real column of `posts`. It is not a foreign
+        // key target, so it is not something a URL may filter on.
+        $this->expectException(UnknownColumnException::class);
+
+        $this->driver->getRows('posts', 1, 25, new RowFilter('title', 'Post 1'));
+    }
+
+    public function test_a_hostile_filter_value_finds_nothing_and_breaks_nothing(): void
+    {
+        $this->pdo->exec("INSERT INTO tags (id, label) VALUES (7, 'ops')");
+
+        $page = (new SqliteDriver($this->pdo))->getRows('tags', 1, 25, new RowFilter('id', "' OR 1=1 --"));
+
+        $this->assertTrue($page->isEmpty());
+        $this->assertSame(0, $page->total);
     }
 
     public function test_it_describes_the_database(): void

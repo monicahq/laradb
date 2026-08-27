@@ -102,6 +102,21 @@ final class PostgresDriver extends AbstractDriver
         return $references;
     }
 
+    protected function fetchForeignKeyTargets(): array
+    {
+        return $this->groupTargets($this->select(
+            "SELECT DISTINCT ccu.table_name AS target_table,
+                    ccu.column_name AS target_column
+             FROM information_schema.table_constraints tc
+             INNER JOIN information_schema.constraint_column_usage ccu
+                 ON ccu.constraint_name = tc.constraint_name
+                 AND ccu.constraint_schema = tc.constraint_schema
+             WHERE tc.table_schema = current_schema()
+               AND ccu.table_schema = current_schema()
+               AND tc.constraint_type = 'FOREIGN KEY'"
+        ));
+    }
+
     public function serverVersion(): ?string
     {
         return $this->introspect(function (): ?string {

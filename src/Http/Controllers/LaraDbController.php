@@ -13,13 +13,16 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use LaraDb\Drivers\DriverInterface;
 use LaraDb\DTO\DatabaseInfo;
+use LaraDb\DTO\RowFilter;
 use LaraDb\DTO\TableInfo;
 use LaraDb\Exceptions\ConnectionFailedException;
 use LaraDb\Exceptions\LaraDbException;
+use LaraDb\Exceptions\UnknownColumnException;
 use LaraDb\Exceptions\UnknownTableException;
 use LaraDb\Support\DatabasePath;
 use LaraDb\Support\Runtime;
 use LaraDb\Support\ValuePresenter;
+use LaraDb\Support\ViewerUrl;
 use Throwable;
 
 /**
@@ -28,6 +31,12 @@ use Throwable;
  */
 final class LaraDbController
 {
+    /**
+     * A filter is a key lookup. Anything longer than this is not one, and has
+     * no business in a URL.
+     */
+    private const MAX_FILTER_VALUE_LENGTH = 255;
+
     public function __construct(
         private readonly Container $container,
         private readonly Config $config,
@@ -59,9 +68,11 @@ final class LaraDbController
             ]);
         }
 
+        $filter = $this->filter($request);
+
         try {
-            $page = $driver->getRows($selected, $this->page($request), $this->perPage());
-        } catch (UnknownTableException) {
+            $page = $driver->getRows($selected, $this->page($request), $this->perPage(), $filter);
+        } catch (UnknownTableException|UnknownColumnException) {
             abort(404, 'Unknown table.');
         } catch (LaraDbException $e) {
             return $this->view('laradb::index', [
@@ -81,18 +92,22 @@ final class LaraDbController
             'error' => null,
             'database' => $this->describe($driver),
             'queries' => $driver->queryCount(),
+            'from' => $this->from($request, $driver, $selected, $filter),
         ]);
     }
 
     /**
-     * One table's rows. Returns the HTML fragment Alpine swaps into the page,
-     * or JSON when the client asks for it.
+     * One table's rows. Returns the HTML fragment the page swaps into its main
+     * pane, or JSON when the client asks for it.
      */
     public function show(Request $request, string $table): View|JsonResponse|Response
     {
+        $filter = $this->filter($request);
+
         try {
-            $page = $this->driver()->getRows($table, $this->page($request), $this->perPage());
-        } catch (UnknownTableException) {
+            $driver = $this->driver();
+            $page = $driver->getRows($table, $this->page($request), $this->perPage(), $filter);
+        } catch (UnknownTableException|UnknownColumnException) {
             if ($this->wantsJson($request)) {
                 return new JsonResponse(['message' => 'Unknown table.'], 404);
             }
@@ -113,7 +128,61 @@ final class LaraDbController
         return $this->view('laradb::partials.table', [
             'page' => $page,
             'selected' => $table,
+            'from' => $this->from($request, $driver, $table, $filter),
         ]);
+    }
+
+    /**
+     * The filter asked for in the query string.
+     *
+     * Only its shape is checked here — that both halves are present, and that
+     * the value is short enough to be a key rather than an essay. Whether the
+     * column may be filtered on at all is the driver's call, because only the
+     * driver knows what the schema references.
+     */
+    private function filter(Request $request): ?RowFilter
+    {
+        $column = $request->query('column');
+        $value = $request->query('value');
+
+        if (! is_string($column) || $column === '' || ! is_string($value)) {
+            return null;
+        }
+
+        if (mb_strlen($value) > self::MAX_FILTER_VALUE_LENGTH) {
+            abort(404, 'Unknown table.');
+        }
+
+        return new RowFilter($column, $value);
+    }
+
+    /**
+     * The `table.column` label for the foreign key that led here, or null.
+     *
+     * This is text from the URL on its way to the page, so it is confirmed
+     * rather than trusted: the table has to be one we know, and the foreign
+     * key it names has to be the one that actually points at the filter we are
+     * applying. Anything else is dropped, and the chip renders without it.
+     */
+    private function from(Request $request, DriverInterface $driver, string $table, ?RowFilter $filter): ?string
+    {
+        $from = $request->query('from');
+
+        if ($filter === null || ! is_string($from) || ! str_contains($from, '.')) {
+            return null;
+        }
+
+        [$sourceTable, $sourceColumn] = explode('.', $from, 2);
+
+        try {
+            $references = $driver->getForeignKeys($sourceTable);
+        } catch (LaraDbException) {
+            return null;
+        }
+
+        $expected = $table.'.'.$filter->column;
+
+        return ($references[$sourceColumn] ?? null) === $expected ? $from : null;
     }
 
     /**
@@ -250,7 +319,8 @@ final class LaraDbController
         $data['presenter'] = new ValuePresenter(
             (int) $this->config->get('laradb.max_cell_length', 120),
         );
-        $data['routePrefix'] = trim((string) $this->config->get('laradb.route_prefix', 'db'), '/');
+        $routePrefix = trim((string) $this->config->get('laradb.route_prefix', 'db'), '/');
+        $data['routePrefix'] = $routePrefix;
 
         // The connection *name*, never its credentials.
         $data['connection'] = $this->connectionName();
@@ -259,7 +329,9 @@ final class LaraDbController
         // an error page that never reached a driver is given nothing.
         $data['database'] ??= null;
         $data['queries'] ??= null;
+        $data['from'] ??= null;
         $data['runtime'] = Runtime::detect($this->container);
+        $data['url'] = new ViewerUrl(url($routePrefix));
 
         return $data;
     }

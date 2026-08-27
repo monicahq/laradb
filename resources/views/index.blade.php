@@ -475,6 +475,41 @@
 
         .ldb-grid__filler { width: 100%; padding: 0; border-right: 0; }
 
+        /* A foreign key you can follow. Underlined on hover rather than
+           always, so a column of them does not turn the grid into a rug. */
+        .ldb-ref { color: var(--ldb-accent); text-decoration: none; }
+        .ldb-ref:hover { color: var(--ldb-accent-dark); text-decoration: underline; }
+        .ldb-ref::after {
+            content: '↗';
+            margin-left: 4px;
+            font-size: 9px;
+            opacity: 0.5;
+        }
+
+        /* The filter chip: same wash and hairline as the selected sidebar row,
+           so "you are looking at a subset" reads the same in both places. */
+        .ldb-chip {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 2px 4px 2px 8px;
+            border: 1px solid var(--ldb-accent-line);
+            border-radius: 3px;
+            background: var(--ldb-accent-wash);
+            font-size: 10.5px;
+            white-space: nowrap;
+        }
+        .ldb-chip__from { color: #5f8d94; }
+        .ldb-chip__test { color: var(--ldb-accent); font-weight: 600; }
+        .ldb-chip__clear {
+            padding: 0 4px;
+            border-radius: 2px;
+            color: #7fb0b8;
+            font-size: 10px;
+            line-height: 16px;
+        }
+        .ldb-chip__clear:hover { background: var(--ldb-accent); color: #fff; text-decoration: none; }
+
         .ldb-null { font-size: 10px; letter-spacing: 0.06em; color: #c6c4bd; }
 
         .ldb-gridend {
@@ -584,16 +619,12 @@
     </style>
 </head>
 <body>
-@php
-    $base = url($routePrefix);
-@endphp
-
 <div class="ldb">
 
     {{-- Header: what you are looking at, and what the engine says about itself --}}
     <header class="ldb-header">
         <div class="ldb-brand">
-            <a href="{{ $base }}" style="display:flex;align-items:center;gap:10px;color:inherit">
+            <a href="{{ $url->root() }}" style="display:flex;align-items:center;gap:10px;color:inherit">
                 <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
                     <ellipse cx="9" cy="4.2" rx="6.4" ry="2.4" stroke="#0d7c8c" stroke-width="1.4"/>
                     <path d="M2.6 4.2v4.4c0 1.33 2.87 2.4 6.4 2.4s6.4-1.07 6.4-2.4V4.2" stroke="#0d7c8c" stroke-width="1.4"/>
@@ -659,7 +690,8 @@
 
                 <nav class="ldb-tables ldb-scroll" id="laradb-tables" aria-label="Tables">
                     @foreach ($tables as $table)
-                        <a href="{{ $base }}?table={{ urlencode($table->name) }}"
+                        <a href="{{ $url->page($table->name) }}"
+                           data-laradb-fragment="{{ $url->fragment($table->name) }}"
                            data-laradb-table="{{ $table->name }}"
                            @class(['ldb-table', 'is-selected' => $selected === $table->name])
                            @if ($selected === $table->name) aria-current="page" @endif>
@@ -725,18 +757,16 @@
 
 <script>
     (function () {
-        var base = @js($base);
-        var selected = @js($selected);
-
         var pane = document.getElementById('laradb-pane');
         var tables = document.getElementById('laradb-tables');
 
-        function url(table, page) {
-            return base + '/tables/' + encodeURIComponent(table) + '?page=' + page;
-        }
-
+        // Every navigable link on the page — a table in the sidebar, a page in
+        // the pager, a foreign key in a cell, the ✕ on a filter — carries the
+        // fragment URL to fetch next to the href a browser would follow. That
+        // keeps URL building on the server, where the filter already lives, and
+        // leaves this file with one code path instead of one per kind of link.
         function markSelected(table) {
-            if (!tables) {
+            if (!tables || !table) {
                 return;
             }
 
@@ -751,11 +781,11 @@
             });
         }
 
-        function load(target, title) {
+        function load(fragment, title) {
             document.body.classList.add('is-loading');
             pane.setAttribute('aria-busy', 'true');
 
-            return fetch(target, {
+            return fetch(fragment, {
                 headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html' },
                 credentials: 'same-origin',
             }).then(function (response) {
@@ -778,37 +808,26 @@
             });
         }
 
-        if (tables) {
-            tables.addEventListener('click', function (event) {
-                var link = event.target.closest('[data-laradb-table]');
-                if (!link) {
-                    return;
-                }
+        document.addEventListener('click', function (event) {
+            if (event.defaultPrevented || event.button !== 0 || event.metaKey ||
+                event.ctrlKey || event.shiftKey || event.altKey) {
+                return;
+            }
 
-                event.preventDefault();
-                var table = link.getAttribute('data-laradb-table');
-
-                if (table === selected) {
-                    return;
-                }
-
-                selected = table;
-                markSelected(table);
-                load(url(table, 1), table + ' — LaraDb');
-                history.pushState({}, '', base + '?table=' + encodeURIComponent(table));
-            });
-        }
-
-        pane.addEventListener('click', function (event) {
-            var link = event.target.closest('[data-laradb-page]');
+            var link = event.target.closest('[data-laradb-fragment]');
             if (!link) {
                 return;
             }
 
             event.preventDefault();
-            var page = parseInt(link.getAttribute('data-laradb-page'), 10);
-            load(url(selected, page));
-            history.replaceState({}, '', base + '?table=' + encodeURIComponent(selected) + '&page=' + page);
+
+            var table = link.getAttribute('data-laradb-table');
+
+            // No early return when the table is already selected: clicking the
+            // table you are on is how you drop a filter.
+            markSelected(table);
+            load(link.getAttribute('data-laradb-fragment'), table ? table + ' — LaraDb' : null);
+            history.pushState({}, '', link.getAttribute('href'));
         });
 
         // The fragments we inject are plain HTML, so a browser "back" has

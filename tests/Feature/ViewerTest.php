@@ -160,6 +160,85 @@ final class ViewerTest extends TestCase
             ->assertSee('This table is empty');
     }
 
+    public function test_a_foreign_key_cell_links_to_the_row_it_points_at(): void
+    {
+        $this->get('/db?table=users')
+            ->assertOk()
+            // The value itself is the link, and it carries where it came from.
+            ->assertSee('table=accounts&column=id&value=2')
+            ->assertSee('from=users.account_id')
+            ->assertSee('Go to accounts.id = 2');
+    }
+
+    public function test_following_a_foreign_key_shows_the_one_row(): void
+    {
+        $response = $this->get('/db?table=accounts&column=id&value=2&from=users.account_id');
+
+        $response->assertOk()
+            ->assertSee('Globex')
+            ->assertDontSee('Acme')
+            // The chip says what is being shown and where it came from.
+            ->assertSee('users.account_id')
+            ->assertSee('id = 2')
+            ->assertSee('1 row');
+    }
+
+    public function test_following_a_foreign_key_lands_on_a_single_row(): void
+    {
+        // A foreign key has to reference a unique column, so the far end of
+        // one is always exactly one row — never a page of them. per_page is 3
+        // here and there is still no pager.
+        $this->get('/db?table=accounts&column=id&value=1')
+            ->assertOk()
+            ->assertSee('1 row')
+            ->assertDontSee('← prev');
+    }
+
+    public function test_it_refuses_to_filter_on_a_column_no_foreign_key_targets(): void
+    {
+        // `email` is a real column. Nothing references it, so it is not a
+        // door the URL gets to open.
+        $this->get('/db?table=users&column=email&value=user1@example.test')->assertNotFound();
+        $this->get('/db/tables/users?column=email&value=user1@example.test')->assertNotFound();
+    }
+
+    public function test_a_hostile_filter_value_is_answered_with_no_rows(): void
+    {
+        $this->get("/db?table=accounts&column=id&value=' OR 1=1 --")
+            ->assertOk()
+            ->assertSee('No row matches')
+            ->assertDontSee('Globex');
+    }
+
+    public function test_an_absurdly_long_filter_value_is_refused(): void
+    {
+        $this->get('/db?table=accounts&column=id&value='.str_repeat('x', 256))->assertNotFound();
+    }
+
+    public function test_an_origin_that_is_not_a_real_foreign_key_is_dropped(): void
+    {
+        // The filter still applies; only the "came from" label is discarded,
+        // because nothing in the schema backs it up.
+        $this->get('/db?table=accounts&column=id&value=2&from=users.name')
+            ->assertOk()
+            ->assertSee('Globex')
+            ->assertSee('id = 2')
+            ->assertDontSee('users.name');
+    }
+
+    public function test_the_json_endpoint_reports_the_filter(): void
+    {
+        $this->getJson('/db/tables/accounts?column=id&value=2')
+            ->assertOk()
+            ->assertJsonPath('filter.column', 'id')
+            ->assertJsonPath('filter.value', '2')
+            ->assertJsonPath('total', 1);
+
+        $this->getJson('/db/tables/accounts')
+            ->assertOk()
+            ->assertJsonPath('filter', null);
+    }
+
     public function test_it_never_prints_the_connection_credentials(): void
     {
         $this->reloadApplicationWith([

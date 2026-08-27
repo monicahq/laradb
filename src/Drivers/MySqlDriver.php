@@ -87,6 +87,20 @@ final class MySqlDriver extends AbstractDriver
         return $references;
     }
 
+    protected function fetchForeignKeyTargets(): array
+    {
+        // Scoped to this schema on both ends: a reference into another
+        // database points somewhere the viewer cannot browse anyway.
+        return $this->groupTargets($this->select(
+            'SELECT DISTINCT REFERENCED_TABLE_NAME AS target_table,
+                    REFERENCED_COLUMN_NAME AS target_column
+             FROM information_schema.key_column_usage
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND REFERENCED_TABLE_SCHEMA = DATABASE()
+               AND REFERENCED_TABLE_NAME IS NOT NULL'
+        ));
+    }
+
     public function serverVersion(): ?string
     {
         return $this->introspect(function (): ?string {
