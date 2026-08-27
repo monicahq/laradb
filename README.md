@@ -1,3 +1,5 @@
+![LaraDb](github/banner.webp)
+
 # LaraDb
 
 [![Unit tests](https://github.com/monicahq/laradb/actions/workflows/tests.yml/badge.svg)](https://github.com/monicahq/laradb/actions/workflows/tests.yml)
