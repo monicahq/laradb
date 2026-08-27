@@ -16,14 +16,6 @@ write access.
 
 Works with **MySQL / MariaDB**, **PostgreSQL** and **SQLite**.
 
-It reads like a console rather than an admin panel. Every table in the schema is
-in the sidebar with its row count; the grid shows the columns with their types
-and their `PK` / `FK` badges, the row numbers, and `NULL` as something you can
-tell apart from an empty string. Around it, the chrome tells you where you are:
-the engine and its version, the database being browsed, its size and index
-count, the settings the engine reports for itself, and — for the page you are
-looking at — the statement that produced it and how long it took.
-
 The page ships its own CSS and JavaScript. No build step, no Tailwind, no
 Alpine, no CDN: the only remote request is a webfont, and the layout is intact
 without it. Publishing the views with `--tag=laradb-views` gives you the whole
@@ -42,7 +34,7 @@ table, to anyone who can reach the URL.
   anywhere else is an explicit decision you have to make.
 - **Never expose it without authentication and authorisation.** The default
   middleware stack is `['web', 'auth']`, which is the bare minimum — any
-  logged-in user passes it. Add a gate (see [Locking it down](#locking-it-down)).
+  logged-in user passes it. Add a gate (see [Who can reach it](#who-can-reach-it)).
 - **Do not enable it on a database holding personal or otherwise sensitive
   data** unless access is strictly controlled. There is no column masking, no
   redaction and no audit log in v1.
@@ -96,9 +88,30 @@ configure this URL - see section below.
 Each has an environment variable: `LARADB_ENABLED`, `LARADB_ROUTE_PREFIX`,
 `LARADB_CONNECTION`, `LARADB_PER_PAGE`, `LARADB_MAX_CELL_LENGTH`.
 
-## Locking it down
+## Who can reach it
 
-`auth` alone only proves someone is logged in. Add a gate:
+Three separate things decide that. They are a stack, not alternatives: each is
+a place the viewer can be stopped, and they fail independently. The warning at
+the top of this file names them; here is how to set each one.
+
+**1. Whether it is installed at all.** `composer require --dev` keeps LaraDb
+out of a production build entirely — `composer install --no-dev` on deploy and
+there is no package, no service provider, no route to protect. Nothing else
+here is as strong, because nothing else here can be misconfigured.
+
+**2. Whether the routes are registered.** `enabled` is `null` by default, which
+means "only in `local`". A staging or production box has no `/db` even if the
+package did end up in the build. Turning it on anywhere else is a deliberate
+act, and it is the point at which layer 3 stops being optional:
+
+```env
+LARADB_ENABLED=true
+```
+
+**3. Who gets past the middleware.** This is the one you have to write. The
+default stack is `['web', 'auth']`, which only proves the visitor is *someone* —
+every logged-in user of your application passes it, including the test account
+you made six months ago. Put an authorisation check on top:
 
 ```php
 // app/Providers/AppServiceProvider.php
@@ -107,7 +120,7 @@ use Illuminate\Support\Facades\Gate;
 public function boot(): void
 {
     Gate::define('viewLaraDb', function ($user) {
-        return $user->is_admin;
+        return $user->is_admin;   // whatever "may read the database" means here
     });
 }
 ```
@@ -117,13 +130,16 @@ public function boot(): void
 'middleware' => ['web', 'auth', 'can:viewLaraDb'],
 ```
 
-If you enable it outside `local`, put it behind a prefix that is not guessable
-and keep the gate narrow:
+The stack applies to the whole route group, so the page, the HTML fragment and
+the JSON endpoint are all behind the same gate. A user who fails it gets a 403.
 
-```env
-LARADB_ENABLED=true
-LARADB_ROUTE_PREFIX=internal/db-2f9c
-```
+### What is not one of the three
+
+`route_prefix` moves the viewer; it does not hide it. A URL is not a secret: it
+turns up in access logs, browser history, `Referer` headers and whatever error
+tracker you have installed, and it is one shoulder-surf from being public. Set
+it because `/db` collides with a route of your own, or to keep LaraDb out of the
+way — not to a random string you then count as a layer of defence.
 
 ## Routes
 
