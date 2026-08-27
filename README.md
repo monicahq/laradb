@@ -23,6 +23,8 @@ Works with **MySQL / MariaDB**, **PostgreSQL** and **SQLite**.
 LaraDb renders the contents of your database in a web page. Every row of every
 table, to anyone who can reach the URL.
 
+- **Install it with `composer require --dev`.** A production deploy running
+  `composer install --no-dev` then never ships the viewer at all.
 - **It is disabled outside the `local` environment by default.** Turning it on
   anywhere else is an explicit decision you have to make.
 - **Never expose it without authentication and authorisation.** The default
@@ -39,12 +41,31 @@ table, to anyone who can reach the URL.
 
 ## Installation
 
+Install it as a **development dependency**:
+
 ```bash
-composer require monicahq/laradb
+composer require --dev monicahq/laradb
 ```
 
 The service provider is auto-discovered. In a `local` environment, that is all
 you need: visit `/db`.
+
+`--dev` matters. A production deploy running `composer install --no-dev` then
+leaves the viewer out of the build entirely — its code is not on the server, so
+there is nothing to misconfigure, no route to reach and no flag to get wrong.
+That is a stronger guarantee than the `enabled` switch, which is only a second
+line of defence.
+
+If you deliberately want it on a deployed environment — a staging box, an
+internal admin tool — move it to `require` instead, and treat
+[Locking it down](#locking-it-down) as mandatory rather than advisory:
+
+```bash
+composer require monicahq/laradb
+```
+
+The package behaves identically either way; the difference is only whether the
+code ships.
 
 Publish the config to change anything:
 
