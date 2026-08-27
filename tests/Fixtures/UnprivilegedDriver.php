@@ -39,6 +39,11 @@ final class UnprivilegedDriver extends AbstractDriver
         throw new RuntimeException('SELECT command denied.');
     }
 
+    protected function fetchForeignKeyTargets(): array
+    {
+        throw new RuntimeException('SELECT command denied.');
+    }
+
     public function serverVersion(): ?string
     {
         return $this->introspect(fn (): string => throw new RuntimeException('SELECT command denied.'));

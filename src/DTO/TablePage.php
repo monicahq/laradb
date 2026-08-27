@@ -16,6 +16,7 @@ final class TablePage
      * @param  string  $sql  the statement that produced these rows, shown in
      *                       the UI so the reader knows exactly what was run
      * @param  float  $durationMs  how long that statement took
+     * @param  RowFilter|null  $filter  the filter that narrowed this page, if any
      */
     public function __construct(
         public readonly string $table,
@@ -26,6 +27,7 @@ final class TablePage
         public readonly int $total,
         public readonly string $sql = '',
         public readonly float $durationMs = 0.0,
+        public readonly ?RowFilter $filter = null,
     ) {}
 
     /**
@@ -138,7 +140,8 @@ final class TablePage
      *     total: int,
      *     last_page: int,
      *     sql: string,
-     *     duration_ms: float
+     *     duration_ms: float,
+     *     filter: array{column: string, value: string}|null
      * }
      */
     public function toArray(): array
@@ -153,6 +156,7 @@ final class TablePage
             'last_page' => $this->lastPage(),
             'sql' => $this->sql,
             'duration_ms' => $this->durationMs,
+            'filter' => $this->filter?->toArray(),
         ];
     }
 }

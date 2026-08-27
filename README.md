@@ -141,6 +141,11 @@ Both routes are named and `GET` only.
 | `GET /db` | `laradb.index` | The full page. `?table=` selects a table, `?page=` a page. |
 | `GET /db/tables/{table}` | `laradb.table` | The rows of one table, as an HTML fragment. |
 
+Both also accept `?column=` and `?value=`, which narrow the table to the rows
+whose column equals that value — see [Following a foreign
+key](#following-a-foreign-key). `?from=` is the label the chip shows and is
+ignored unless it names a real foreign key.
+
 The fragment endpoint also speaks JSON, with `?format=json` or an
 `Accept: application/json` header:
 
@@ -157,9 +162,37 @@ The fragment endpoint also speaks JSON, with `?format=json` or an
   "total": 42,
   "last_page": 2,
   "sql": "SELECT * FROM \"users\" LIMIT 25 OFFSET 0",
-  "duration_ms": 0.42
+  "duration_ms": 0.42,
+  "filter": null
 }
 ```
+
+## Following a foreign key
+
+A column the schema declares as a foreign key gets an `FK` badge, and every
+non-`NULL` value in it is a link. Click `account_id = 3` in `users` and you
+land on `accounts`, narrowed to `id = 3`, with a chip naming the key you came
+through and an ✕ to drop it again. Because a foreign key has to reference a
+unique column, the far end is always exactly one row.
+
+This is the only thing in the package that takes a value from the URL and puts
+it in a query, so it is worth being precise about what keeps that safe:
+
+- **The column is not free-form.** It has to be one that a foreign key
+  somewhere in the schema actually points at. `?column=id` on `accounts` works
+  because `users.account_id` references it; `?column=password` on `users` is a
+  404, because nothing references it. The set comes from introspection, the
+  same place the table whitelist comes from — never from a pattern or a guess.
+- **The value is bound, never interpolated.** It is a PDO parameter, whatever
+  it contains. `?value=' OR 1=1 --` selects no rows and raises nothing; the
+  statement shown in the header keeps its `:value` placeholder, because that is
+  genuinely what ran.
+- **The value is capped** at 255 characters. A key lookup does not need more.
+
+The `from=` parameter, which is only there so the chip can say *← users.
+account_id*, is checked against the schema too: the foreign key it names has to
+be the one that actually points at the filter being applied, or the label is
+dropped.
 
 ## Using the core without Laravel
 
@@ -176,6 +209,9 @@ foreach ($driver->listTables() as $table) {
 }
 
 $page = $driver->getRows('users', page: 2, perPage: 25);
+
+// And the row a foreign key points at:
+$account = $driver->getRows('accounts', 1, 25, new RowFilter('id', '3'));
 ```
 
 `DriverInterface` is the package's public contract:
@@ -184,8 +220,8 @@ $page = $driver->getRows('users', page: 2, perPage: 25);
 // Reading
 public function listTables(): array;                                     // TableInfo[]
 public function getColumns(string $table): array;                        // ColumnInfo[]
-public function getRowCount(string $table): int;
-public function getRows(string $table, int $page, int $perPage): TablePage;
+public function getRowCount(string $table, ?RowFilter $filter = null): int;
+public function getRows(string $table, int $page, int $perPage, ?RowFilter $filter = null): TablePage;
 public function name(): string;
 
 // Describing — everything the chrome is built from
@@ -195,6 +231,7 @@ public function sizeInBytes(): ?int;
 public function indexCount(): ?int;
 public function metadata(): array;            // engine settings, in display order
 public function getForeignKeys(string $table): array;  // column => "table.column"
+public function foreignKeyTargets(): array;   // table => the columns keys point at
 public function describe(): DatabaseInfo;     // all of the above, gathered once
 public function queryCount(): int;
 ```
@@ -202,6 +239,10 @@ public function queryCount(): int;
 The describing half is nullable throughout, and deliberately so: reading a
 system catalogue is a privilege. A connection whose user cannot do it gets a
 working viewer with a quieter header, never a 500.
+
+`foreignKeyTargets()` is what decides whether a `RowFilter` is allowed:
+filtering on a column it does not list raises `UnknownColumnException`, which
+the controller turns into a 404.
 
 What each engine reports for `metadata()`:
 

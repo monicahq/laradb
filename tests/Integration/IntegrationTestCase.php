@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace LaraDb\Tests\Integration;
 
 use LaraDb\Drivers\AbstractDriver;
+use LaraDb\DTO\RowFilter;
+use LaraDb\Exceptions\UnknownColumnException;
 use LaraDb\Exceptions\UnknownTableException;
 use PDO;
 use PHPUnit\Framework\TestCase;
@@ -121,6 +123,39 @@ abstract class IntegrationTestCase extends TestCase
         $this->assertSame('laradb_tags.id', $columns[1]->foreignKey);
         $this->assertSame(['tag_id' => 'laradb_tags.id'], $this->driver->getForeignKeys('laradb_posts'));
         $this->assertSame([], $this->driver->getForeignKeys('laradb_tags'));
+    }
+
+    public function test_it_lists_the_columns_a_foreign_key_points_at(): void
+    {
+        $targets = $this->driver->foreignKeyTargets();
+
+        // laradb_posts.tag_id references laradb_tags.id, and that is the only
+        // foreign key in the fixture.
+        $this->assertArrayHasKey('laradb_tags', $targets);
+        $this->assertSame(['id'], $targets['laradb_tags']);
+        $this->assertArrayNotHasKey('laradb_posts', $targets);
+    }
+
+    public function test_it_filters_to_the_row_a_foreign_key_points_at(): void
+    {
+        $this->pdo->exec("INSERT INTO laradb_tags (label) VALUES ('ops'), ('infra')");
+
+        $driver = $this->makeDriver($this->pdo);
+        $first = (string) $driver->getRows('laradb_tags', 1, 25)->rows[0]['id'];
+
+        $page = $driver->getRows('laradb_tags', 1, 25, new RowFilter('id', $first));
+
+        $this->assertSame(1, $page->total);
+        $this->assertSame($first, (string) $page->rows[0]['id']);
+        $this->assertStringContainsString('WHERE', $page->sql);
+        $this->assertStringNotContainsString((string) $first, explode('WHERE', $page->sql)[1]);
+    }
+
+    public function test_it_refuses_to_filter_on_a_column_nothing_references(): void
+    {
+        $this->expectException(UnknownColumnException::class);
+
+        $this->driver->getRows('laradb_posts', 1, 25, new RowFilter('title', 'Post 1'));
     }
 
     public function test_it_describes_the_database(): void

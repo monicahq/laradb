@@ -6,9 +6,11 @@ namespace LaraDb\Drivers;
 
 use LaraDb\DTO\ColumnInfo;
 use LaraDb\DTO\DatabaseInfo;
+use LaraDb\DTO\RowFilter;
 use LaraDb\DTO\TableInfo;
 use LaraDb\DTO\TablePage;
 use LaraDb\Exceptions\QueryFailedException;
+use LaraDb\Exceptions\UnknownColumnException;
 use LaraDb\Exceptions\UnknownTableException;
 use LaraDb\Support\Bytes;
 use PDO;
@@ -41,6 +43,13 @@ abstract class AbstractDriver implements DriverInterface
 
     private ?DatabaseInfo $description = null;
 
+    /**
+     * Memoised set of legal filter columns, table => column names.
+     *
+     * @var array<string, list<string>>|null
+     */
+    private ?array $targets = null;
+
     private int $queries = 0;
 
     public function __construct(protected readonly PDO $pdo) {}
@@ -68,21 +77,24 @@ abstract class AbstractDriver implements DriverInterface
         );
     }
 
-    public function getRowCount(string $table): int
+    public function getRowCount(string $table, ?RowFilter $filter = null): int
     {
         $this->assertTableExists($table);
 
-        $result = $this->selectOne('SELECT COUNT(*) AS aggregate FROM '.$this->quoteIdentifier($table));
+        $result = $this->selectOne(
+            'SELECT COUNT(*) AS aggregate FROM '.$this->quoteIdentifier($table).$this->whereClause($table, $filter),
+            $this->bindings($filter),
+        );
 
         return (int) ($result['aggregate'] ?? 0);
     }
 
-    public function getRows(string $table, int $page, int $perPage): TablePage
+    public function getRows(string $table, int $page, int $perPage, ?RowFilter $filter = null): TablePage
     {
         $this->assertTableExists($table);
 
         $perPage = max(1, min($perPage, self::MAX_PER_PAGE));
-        $total = $this->getRowCount($table);
+        $total = $this->getRowCount($table, $filter);
         $lastPage = max(1, (int) ceil($total / $perPage));
 
         // Clamping rather than erroring: a stale bookmark pointing at page 900
@@ -90,12 +102,15 @@ abstract class AbstractDriver implements DriverInterface
         $page = max(1, min($page, $lastPage));
         $offset = ($page - 1) * $perPage;
 
-        // $perPage and $offset are integers derived from arithmetic above, and
-        // the table name has just been matched against the schema whitelist,
-        // so this statement carries no caller-controlled string.
+        // $perPage and $offset are integers derived from arithmetic above; the
+        // table name has just been matched against the schema whitelist, and
+        // whereClause() only ever interpolates a column the schema vouched
+        // for. The filter's *value* is bound, so this statement still carries
+        // no caller-controlled string.
         $sql = sprintf(
-            'SELECT * FROM %s LIMIT %d OFFSET %d',
+            'SELECT * FROM %s%s LIMIT %d OFFSET %d',
             $this->quoteIdentifier($table),
+            $this->whereClause($table, $filter),
             $perPage,
             $offset,
         );
@@ -103,7 +118,7 @@ abstract class AbstractDriver implements DriverInterface
         // Timed so the UI can show what the page cost. This is the read the
         // visitor is waiting on; the introspection around it is memoised.
         $startedAt = hrtime(true);
-        $rows = $this->select($sql);
+        $rows = $this->select($sql, $this->bindings($filter));
         $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
         return new TablePage(
@@ -115,7 +130,16 @@ abstract class AbstractDriver implements DriverInterface
             total: $total,
             sql: $sql,
             durationMs: $durationMs,
+            filter: $filter,
         );
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    public function foreignKeyTargets(): array
+    {
+        return $this->targets ??= $this->introspect(fn (): array => $this->fetchForeignKeyTargets()) ?? [];
     }
 
     public function serverVersion(): ?string
@@ -227,6 +251,83 @@ abstract class AbstractDriver implements DriverInterface
         }
 
         throw UnknownTableException::forTable($table);
+    }
+
+    /**
+     * Guarantee the column we are about to interpolate is one a foreign key
+     * actually points at.
+     *
+     * Narrower than "a column of this table" on purpose: following a foreign
+     * key is the only thing that needs this, so it is the only thing allowed
+     * to use it. A URL naming any other column gets nowhere.
+     *
+     * @throws UnknownColumnException
+     */
+    protected function assertFilterable(string $table, string $column): void
+    {
+        if (in_array($column, $this->foreignKeyTargets()[$table] ?? [], true)) {
+            return;
+        }
+
+        throw UnknownColumnException::forColumn($table, $column);
+    }
+
+    /**
+     * The WHERE clause for a filter, or an empty string when there is none.
+     * The column is validated first; the value is left to bindings().
+     */
+    private function whereClause(string $table, ?RowFilter $filter): string
+    {
+        if ($filter === null) {
+            return '';
+        }
+
+        $this->assertFilterable($table, $filter->column);
+
+        return ' WHERE '.$this->quoteIdentifier($filter->column).' = :value';
+    }
+
+    /**
+     * @return array<string, scalar|null>
+     */
+    private function bindings(?RowFilter $filter): array
+    {
+        return $filter === null ? [] : ['value' => $filter->value];
+    }
+
+    /**
+     * Engine-specific lookup of every foreign key target in the schema, as
+     * table => column names. One query, not one per table.
+     *
+     * @return array<string, list<string>>
+     */
+    abstract protected function fetchForeignKeyTargets(): array;
+
+    /**
+     * Fold rows of `target_table` / `target_column` into the map
+     * foreignKeyTargets() returns, dropping blanks and duplicates.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     * @return array<string, list<string>>
+     */
+    protected function groupTargets(array $rows): array
+    {
+        $targets = [];
+
+        foreach ($rows as $row) {
+            $table = (string) ($row['target_table'] ?? '');
+            $column = (string) ($row['target_column'] ?? '');
+
+            if ($table === '' || $column === '') {
+                continue;
+            }
+
+            if (! in_array($column, $targets[$table] ?? [], true)) {
+                $targets[$table][] = $column;
+            }
+        }
+
+        return $targets;
     }
 
     /**
