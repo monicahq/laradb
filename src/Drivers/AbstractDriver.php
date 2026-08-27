@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace LaraDb\Drivers;
 
+use LaraDb\DTO\ColumnInfo;
+use LaraDb\DTO\DatabaseInfo;
 use LaraDb\DTO\TableInfo;
 use LaraDb\DTO\TablePage;
 use LaraDb\Exceptions\QueryFailedException;
 use LaraDb\Exceptions\UnknownTableException;
+use LaraDb\Support\Bytes;
 use PDO;
 use PDOException;
 use Throwable;
@@ -36,6 +39,10 @@ abstract class AbstractDriver implements DriverInterface
      */
     private ?array $tables = null;
 
+    private ?DatabaseInfo $description = null;
+
+    private int $queries = 0;
+
     public function __construct(protected readonly PDO $pdo) {}
 
     /**
@@ -44,6 +51,21 @@ abstract class AbstractDriver implements DriverInterface
     public function listTables(): array
     {
         return $this->tables ??= $this->fetchTables();
+    }
+
+    /**
+     * @return list<ColumnInfo>
+     */
+    final public function getColumns(string $table): array
+    {
+        $this->assertTableExists($table);
+
+        $references = $this->getForeignKeys($table);
+
+        return array_map(
+            static fn (ColumnInfo $column): ColumnInfo => $column->referencing($references[$column->name] ?? null),
+            $this->fetchColumns($table),
+        );
     }
 
     public function getRowCount(string $table): int
@@ -71,12 +93,18 @@ abstract class AbstractDriver implements DriverInterface
         // $perPage and $offset are integers derived from arithmetic above, and
         // the table name has just been matched against the schema whitelist,
         // so this statement carries no caller-controlled string.
-        $rows = $this->select(sprintf(
+        $sql = sprintf(
             'SELECT * FROM %s LIMIT %d OFFSET %d',
             $this->quoteIdentifier($table),
             $perPage,
             $offset,
-        ));
+        );
+
+        // Timed so the UI can show what the page cost. This is the read the
+        // visitor is waiting on; the introspection around it is memoised.
+        $startedAt = hrtime(true);
+        $rows = $this->select($sql);
+        $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
         return new TablePage(
             table: $table,
@@ -85,7 +113,70 @@ abstract class AbstractDriver implements DriverInterface
             page: $page,
             perPage: $perPage,
             total: $total,
+            sql: $sql,
+            durationMs: $durationMs,
         );
+    }
+
+    public function serverVersion(): ?string
+    {
+        return $this->introspect(function (): ?string {
+            /** @var mixed $version */
+            $version = $this->pdo->getAttribute(PDO::ATTR_SERVER_VERSION);
+
+            return is_scalar($version) ? (string) $version : null;
+        });
+    }
+
+    public function databaseName(): ?string
+    {
+        return null;
+    }
+
+    public function sizeInBytes(): ?int
+    {
+        return null;
+    }
+
+    public function indexCount(): ?int
+    {
+        return null;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function metadata(): array
+    {
+        return [];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function getForeignKeys(string $table): array
+    {
+        $this->assertTableExists($table);
+
+        return $this->introspect(fn (): array => $this->fetchForeignKeys($table)) ?? [];
+    }
+
+    public function describe(): DatabaseInfo
+    {
+        return $this->description ??= new DatabaseInfo(
+            engine: $this->name(),
+            version: $this->serverVersion(),
+            name: $this->databaseName(),
+            tableCount: count($this->listTables()),
+            indexCount: $this->indexCount(),
+            sizeInBytes: $this->sizeInBytes(),
+            metadata: $this->metadata(),
+        );
+    }
+
+    public function queryCount(): int
+    {
+        return $this->queries;
     }
 
     /**
@@ -94,6 +185,25 @@ abstract class AbstractDriver implements DriverInterface
      * @return list<TableInfo>
      */
     abstract protected function fetchTables(): array;
+
+    /**
+     * Engine-specific column introspection. Called only for a table that has
+     * already been matched against the whitelist; foreign keys are grafted on
+     * by getColumns(), so implementations do not have to look them up.
+     *
+     * @return list<ColumnInfo>
+     */
+    abstract protected function fetchColumns(string $table): array;
+
+    /**
+     * Engine-specific foreign key introspection, as column => `table.column`.
+     *
+     * @return array<string, string>
+     */
+    protected function fetchForeignKeys(string $table): array
+    {
+        return [];
+    }
 
     /**
      * Quote a table or column name according to the engine's rules. The inner
@@ -120,11 +230,63 @@ abstract class AbstractDriver implements DriverInterface
     }
 
     /**
+     * Run a probe whose answer is decoration rather than content.
+     *
+     * Reading a system catalogue can fail for reasons that have nothing to do
+     * with the rows the visitor asked for — a missing grant, a catalogue that
+     * moved between releases. None of those should cost them the page, so the
+     * failure becomes a null and the UI leaves that slot out.
+     *
+     * @template T
+     *
+     * @param  callable(): T  $probe
+     * @return T|null
+     */
+    protected function introspect(callable $probe): mixed
+    {
+        try {
+            return $probe();
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * The first column of the first row, as a string.
+     */
+    protected function scalar(string $sql): ?string
+    {
+        $row = $this->selectOne($sql);
+
+        if ($row === null) {
+            return null;
+        }
+
+        /** @var mixed $value */
+        $value = array_values($row)[0] ?? null;
+
+        return is_scalar($value) ? (string) $value : null;
+    }
+
+    /**
+     * The first column of the first row, as an integer, or null when the
+     * engine answered with nothing.
+     */
+    protected function integer(string $sql): ?int
+    {
+        $value = $this->scalar($sql);
+
+        return $value === null || ! is_numeric($value) ? null : (int) $value;
+    }
+
+    /**
      * @param  array<string, scalar|null>  $bindings
      * @return list<array<string, mixed>>
      */
     protected function select(string $sql, array $bindings = []): array
     {
+        $this->queries++;
+
         try {
             $statement = $this->pdo->prepare($sql);
 
@@ -176,22 +338,9 @@ abstract class AbstractDriver implements DriverInterface
         }
 
         if (is_string($value) && ! mb_check_encoding($value, 'UTF-8')) {
-            return sprintf('[binary, %s]', $this->formatBytes(strlen($value)));
+            return sprintf('[binary, %s]', Bytes::format(strlen($value)));
         }
 
         return $value;
-    }
-
-    private function formatBytes(int $bytes): string
-    {
-        if ($bytes < 1024) {
-            return $bytes.' B';
-        }
-
-        if ($bytes < 1024 * 1024) {
-            return round($bytes / 1024, 1).' KB';
-        }
-
-        return round($bytes / 1024 / 1024, 1).' MB';
     }
 }

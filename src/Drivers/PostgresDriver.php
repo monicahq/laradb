@@ -48,10 +48,8 @@ final class PostgresDriver extends AbstractDriver
         }, $rows);
     }
 
-    public function getColumns(string $table): array
+    protected function fetchColumns(string $table): array
     {
-        $this->assertTableExists($table);
-
         $primaryKeys = $this->primaryKeyColumns($table);
 
         $rows = $this->select(
@@ -70,6 +68,82 @@ final class PostgresDriver extends AbstractDriver
             primaryKey: in_array((string) $row['name'], $primaryKeys, true),
             default: isset($row['column_default']) ? (string) $row['column_default'] : null,
         ), $rows);
+    }
+
+    protected function fetchForeignKeys(string $table): array
+    {
+        $rows = $this->select(
+            "SELECT kcu.column_name AS name,
+                    ccu.table_name AS referenced_table,
+                    ccu.column_name AS referenced_column
+             FROM information_schema.table_constraints tc
+             INNER JOIN information_schema.key_column_usage kcu
+                 ON kcu.constraint_name = tc.constraint_name
+                 AND kcu.constraint_schema = tc.constraint_schema
+             INNER JOIN information_schema.constraint_column_usage ccu
+                 ON ccu.constraint_name = tc.constraint_name
+                 AND ccu.constraint_schema = tc.constraint_schema
+             WHERE tc.table_schema = current_schema()
+               AND tc.table_name = :table
+               AND tc.constraint_type = 'FOREIGN KEY'",
+            ['table' => $table],
+        );
+
+        $references = [];
+
+        foreach ($rows as $row) {
+            $references[(string) $row['name']] = sprintf(
+                '%s.%s',
+                (string) $row['referenced_table'],
+                (string) $row['referenced_column'],
+            );
+        }
+
+        return $references;
+    }
+
+    public function serverVersion(): ?string
+    {
+        return $this->introspect(function (): ?string {
+            $version = $this->scalar('SHOW server_version');
+
+            // Packaged builds append their provenance:
+            // "16.3 (Debian 16.3-1.pgdg120+1)". The number is the useful part.
+            return $version === null ? null : explode(' ', $version)[0];
+        });
+    }
+
+    public function databaseName(): ?string
+    {
+        return $this->introspect(fn (): ?string => $this->scalar('SELECT current_database()'));
+    }
+
+    public function sizeInBytes(): ?int
+    {
+        return $this->introspect(fn (): ?int => $this->integer('SELECT pg_database_size(current_database())'));
+    }
+
+    public function indexCount(): ?int
+    {
+        return $this->introspect(fn (): ?int => $this->integer(
+            "SELECT COUNT(*)
+             FROM pg_class c
+             INNER JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = current_schema() AND c.relkind = 'i'"
+        ));
+    }
+
+    public function metadata(): array
+    {
+        return $this->introspect(fn (): array => array_filter([
+            'enc' => $this->scalar(
+                'SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname = current_database()'
+            ),
+            'collation' => $this->scalar(
+                'SELECT datcollate FROM pg_database WHERE datname = current_database()'
+            ),
+            'schema' => $this->scalar('SELECT current_schema()'),
+        ], static fn (?string $value): bool => $value !== null && $value !== '')) ?? [];
     }
 
     /**

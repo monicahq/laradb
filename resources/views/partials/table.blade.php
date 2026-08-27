@@ -1,110 +1,134 @@
 @php
     $base = url($routePrefix);
     $pageUrl = static fn (int $number): string => $base.'?table='.urlencode($page->table).'&page='.$number;
+    $primaryKey = $page->primaryKey();
 @endphp
 
-{{-- Table header strip --}}
-<div class="flex shrink-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-slate-200 bg-white px-5 py-3">
-    <h1 class="font-mono text-sm font-semibold text-slate-900">{{ $page->table }}</h1>
-    <p class="text-xs text-slate-400 tabular-nums">
+{{-- What this table is, and what it cost to read --}}
+<div class="ldb-strip">
+    <h1 class="ldb-strip__name">{{ $page->table }}</h1>
+    <span class="ldb-strip__kind">TABLE</span>
+    <span class="ldb-strip__rule"></span>
+    <span class="ldb-strip__meta">
+        {{ number_format(count($page->columns)) }} {{ count($page->columns) === 1 ? 'column' : 'columns' }}
+        · {{ number_format($page->total) }} {{ $page->total === 1 ? 'row' : 'rows' }}
+        @if ($primaryKey !== null)
+            · pk {{ $primaryKey }}
+        @endif
+    </span>
+
+    <span class="ldb-spacer"></span>
+
+    @if ($page->sql !== '')
+        <span class="ldb-strip__sql" title="{{ $page->sql }}">{{ $page->sql }}</span>
+        <span class="ldb-strip__rule"></span>
+    @endif
+    <span class="ldb-strip__ms ldb-num">{{ number_format($page->durationMs, 2) }} ms</span>
+    <span class="ldb-strip__range ldb-num">
         @if ($page->total === 0)
             no rows
         @else
-            {{ number_format((int) $page->from()) }}–{{ number_format((int) $page->to()) }}
-            of {{ number_format($page->total) }} {{ $page->total === 1 ? 'row' : 'rows' }}
-            · {{ count($page->columns) }} {{ count($page->columns) === 1 ? 'column' : 'columns' }}
+            {{ number_format((int) $page->from()) }}–{{ number_format((int) $page->to()) }} of {{ number_format($page->total) }}
         @endif
-    </p>
+    </span>
 </div>
 
 @if ($page->isEmpty())
-    <div class="flex flex-1 items-center justify-center p-10">
-        <div class="text-center">
-            <p class="text-sm font-medium text-slate-500">This table is empty</p>
-            <p class="mt-1 text-sm text-slate-400">
-                <span class="font-mono">{{ $page->table }}</span> has {{ count($page->columns) }} columns and no rows.
+    <div class="ldb-empty">
+        <div>
+            <p class="ldb-empty__title">This table is empty</p>
+            <p class="ldb-empty__hint">
+                <span class="ldb-mono">{{ $page->table }}</span>
+                has {{ number_format(count($page->columns)) }} {{ count($page->columns) === 1 ? 'column' : 'columns' }}
+                and no rows.
             </p>
         </div>
     </div>
 @else
-    <div class="laradb-scroll min-h-0 flex-1 overflow-auto">
-        <table class="min-w-full border-separate border-spacing-0 text-sm">
+    <div class="ldb-gridwrap ldb-scroll">
+        <table class="ldb-grid">
             <thead>
                 <tr>
+                    <th scope="col" class="ldb-grid__gutter" aria-label="Row number">#</th>
                     @foreach ($page->columns as $column)
-                        <th scope="col"
-                            class="sticky top-0 z-10 whitespace-nowrap border-b border-slate-200 bg-slate-50 px-4 py-2 text-left align-bottom">
-                            <span class="flex items-baseline gap-1.5">
-                                <span class="font-mono text-xs font-semibold text-slate-700">{{ $column->name }}</span>
+                        <th scope="col">
+                            <span class="ldb-grid__col">
+                                <span class="ldb-grid__colname">{{ $column->name }}</span>
                                 @if ($column->primaryKey)
-                                    <span class="rounded bg-amber-100 px-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700"
-                                          title="Primary key">pk</span>
+                                    <span class="ldb-badge ldb-badge--pk" title="Primary key">PK</span>
+                                @endif
+                                @if ($column->foreignKey !== null)
+                                    <span class="ldb-badge ldb-badge--fk"
+                                          title="References {{ $column->foreignKey }}">FK</span>
                                 @endif
                             </span>
-                            <span class="mt-0.5 block truncate text-[11px] font-normal lowercase text-slate-400"
+                            <span class="ldb-grid__type"
                                   title="{{ $column->type }}{{ $column->nullable ? ', nullable' : ', not null' }}">
                                 {{ $column->type }}
                             </span>
                         </th>
                     @endforeach
+                    <th class="ldb-grid__filler" aria-hidden="true"></th>
                 </tr>
             </thead>
             <tbody>
                 @foreach ($page->rows as $row)
-                    <tr class="even:bg-slate-50/60 hover:bg-sky-50/70">
+                    <tr>
+                        <td class="ldb-grid__gutter ldb-num">{{ number_format((int) $page->from() + $loop->index) }}</td>
                         @foreach ($page->columns as $column)
                             @php $value = $row[$column->name] ?? null; @endphp
-                            <td class="max-w-md truncate border-b border-slate-100 px-4 py-1.5 align-top font-mono text-xs
-                                       {{ $presenter->isNull($value) ? 'italic text-slate-300' : 'text-slate-700' }}"
-                                @if ($presenter->isTruncated($value)) title="{{ $presenter->full($value) }}" @endif>
-                                {{ $presenter->display($value) }}
+                            <td @if ($presenter->isTruncated($value)) title="{{ $presenter->full($value) }}" @endif>
+                                @if ($presenter->isNull($value))
+                                    <span class="ldb-null">NULL</span>
+                                @else
+                                    {{ $presenter->display($value) }}
+                                @endif
                             </td>
                         @endforeach
+                        <td class="ldb-grid__filler"></td>
                     </tr>
                 @endforeach
             </tbody>
         </table>
+
+        <p class="ldb-gridend">
+            end of page — {{ number_format((int) $page->from()) }}–{{ number_format((int) $page->to()) }}
+            of {{ number_format($page->total) }} {{ $page->total === 1 ? 'row' : 'rows' }}
+            @if ($page->lastPage() > 1)
+                · page {{ number_format($page->page) }} of {{ number_format($page->lastPage()) }}
+            @endif
+        </p>
     </div>
 
     {{-- Pagination --}}
     @if ($page->lastPage() > 1)
-        <nav class="flex shrink-0 items-center justify-between gap-4 border-t border-slate-200 bg-white px-5 py-2.5"
-             aria-label="Pagination">
+        <nav class="ldb-pager" aria-label="Pagination">
             <a href="{{ $pageUrl($page->page - 1) }}"
                @if ($page->hasPreviousPage()) data-laradb-page="{{ $page->page - 1 }}" @endif
-               @class([
-                   'rounded-md px-2.5 py-1 text-xs font-medium ring-1 ring-inset',
-                   'text-slate-600 ring-slate-200 hover:bg-slate-50 hover:text-slate-900' => $page->hasPreviousPage(),
-                   'pointer-events-none text-slate-300 ring-slate-100' => ! $page->hasPreviousPage(),
-               ])
+               @class(['ldb-pager__step', 'is-disabled' => ! $page->hasPreviousPage()])
                @if (! $page->hasPreviousPage()) aria-disabled="true" tabindex="-1" @endif>
-                ← Previous
+                ← prev
             </a>
 
-            <div class="flex items-center gap-1">
+            <div class="ldb-pager__pages">
                 @foreach ($page->paginationWindow() as $number)
                     @if ($number === null)
-                        <span class="px-1 text-xs text-slate-300">…</span>
+                        <span class="ldb-pager__gap">…</span>
                     @elseif ($number === $page->page)
-                        <span aria-current="page"
-                              class="rounded-md bg-slate-900 px-2.5 py-1 text-xs font-semibold tabular-nums text-white">{{ $number }}</span>
+                        <span aria-current="page" class="ldb-pager__page is-current ldb-num">{{ $number }}</span>
                     @else
                         <a href="{{ $pageUrl($number) }}"
                            data-laradb-page="{{ $number }}"
-                           class="rounded-md px-2.5 py-1 text-xs tabular-nums text-slate-600 hover:bg-slate-100 hover:text-slate-900">{{ $number }}</a>
+                           class="ldb-pager__page ldb-num">{{ $number }}</a>
                     @endif
                 @endforeach
             </div>
 
             <a href="{{ $pageUrl($page->page + 1) }}"
                @if ($page->hasNextPage()) data-laradb-page="{{ $page->page + 1 }}" @endif
-               @class([
-                   'rounded-md px-2.5 py-1 text-xs font-medium ring-1 ring-inset',
-                   'text-slate-600 ring-slate-200 hover:bg-slate-50 hover:text-slate-900' => $page->hasNextPage(),
-                   'pointer-events-none text-slate-300 ring-slate-100' => ! $page->hasNextPage(),
-               ])
+               @class(['ldb-pager__step', 'is-disabled' => ! $page->hasNextPage()])
                @if (! $page->hasNextPage()) aria-disabled="true" tabindex="-1" @endif>
-                Next →
+                next →
             </a>
         </nav>
     @endif

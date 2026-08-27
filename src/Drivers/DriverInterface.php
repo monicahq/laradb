@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaraDb\Drivers;
 
 use LaraDb\DTO\ColumnInfo;
+use LaraDb\DTO\DatabaseInfo;
 use LaraDb\DTO\TableInfo;
 use LaraDb\DTO\TablePage;
 use LaraDb\Exceptions\UnknownTableException;
@@ -18,6 +19,12 @@ use LaraDb\Exceptions\UnknownTableException;
  * Implementations must never accept a table name straight from user input.
  * `$table` is always validated against the schema introspection whitelist
  * before being quoted and interpolated into a statement.
+ *
+ * The introspection methods below — everything from serverVersion() down —
+ * describe the database rather than read it. They exist for the chrome around
+ * the rows, so they are all allowed to answer "I don't know": a connection
+ * whose user cannot read the system catalogues must still get a working
+ * viewer, and an implementation returning null there is behaving correctly.
  */
 interface DriverInterface
 {
@@ -29,7 +36,8 @@ interface DriverInterface
     public function listTables(): array;
 
     /**
-     * The columns of a table, in declaration order.
+     * The columns of a table, in declaration order, each carrying the foreign
+     * key it participates in when there is one.
      *
      * @return list<ColumnInfo>
      *
@@ -56,4 +64,55 @@ interface DriverInterface
      * The engine name this driver handles: `mysql`, `pgsql` or `sqlite`.
      */
     public function name(): string;
+
+    /**
+     * The version of the server on the other end of the connection.
+     */
+    public function serverVersion(): ?string;
+
+    /**
+     * The database being browsed: its name, or — for a file-backed engine —
+     * the file it lives in. Never a DSN, and never anything carrying
+     * credentials.
+     */
+    public function databaseName(): ?string;
+
+    /**
+     * How much disk the database occupies, tables and indexes together.
+     */
+    public function sizeInBytes(): ?int;
+
+    /**
+     * How many indexes exist in the schema being browsed.
+     */
+    public function indexCount(): ?int;
+
+    /**
+     * Engine-level settings worth showing, in display order: SQLite reports
+     * its page size and journal mode, MySQL its storage engine and collation,
+     * PostgreSQL its encoding and search schema.
+     *
+     * @return array<string, string>
+     */
+    public function metadata(): array;
+
+    /**
+     * The foreign keys declared on a table, as column name => `table.column`.
+     *
+     * @return array<string, string>
+     *
+     * @throws UnknownTableException when the table is not in the whitelist
+     */
+    public function getForeignKeys(string $table): array;
+
+    /**
+     * Everything above, gathered once.
+     */
+    public function describe(): DatabaseInfo;
+
+    /**
+     * How many statements this driver has run since it was built. Cheap
+     * feedback on what opening a page actually costs.
+     */
+    public function queryCount(): int;
 }

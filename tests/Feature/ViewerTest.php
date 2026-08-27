@@ -13,10 +13,12 @@ final class ViewerTest extends TestCase
         $response = $this->get('/db');
 
         $response->assertOk()
+            ->assertSee('accounts')
             ->assertSee('empty_table')
             ->assertSee('users')
-            // Tables are alphabetical, so `empty_table` is the one selected.
-            ->assertSee('This table is empty');
+            // Tables are alphabetical, so `accounts` is the one selected.
+            ->assertSee('Acme')
+            ->assertSee('Globex');
     }
 
     public function test_it_shows_the_requested_table(): void
@@ -40,7 +42,37 @@ final class ViewerTest extends TestCase
         $this->get('/db?table=users')
             ->assertOk()
             ->assertSee('created_at')
-            ->assertSee('pk');
+            ->assertSee('PK')
+            ->assertSee('FK');
+    }
+
+    public function test_it_names_the_table_a_foreign_key_points_at(): void
+    {
+        $this->get('/db?table=users')
+            ->assertOk()
+            ->assertSee('References accounts.id');
+    }
+
+    public function test_it_shows_what_it_knows_about_the_database(): void
+    {
+        $response = $this->get('/db?table=users');
+
+        $response->assertOk()
+            // Engine, version and the size of the schema being browsed.
+            ->assertSee('sqlite')
+            ->assertSee((string) \SQLite3::version()['versionString'])
+            ->assertSee('3 tables')
+            // SQLite reports its own settings in the header strip.
+            ->assertSee('journal')
+            ->assertSee('page');
+    }
+
+    public function test_it_shows_the_statement_it_ran_and_how_long_it_took(): void
+    {
+        $this->get('/db?table=users')
+            ->assertOk()
+            ->assertSee('SELECT * FROM &quot;users&quot; LIMIT 3 OFFSET 0', false)
+            ->assertSee(' ms');
     }
 
     public function test_it_paginates(): void
@@ -76,8 +108,17 @@ final class ViewerTest extends TestCase
 
         $response->assertOk()
             ->assertSee('User 1')
-            ->assertDontSee('<!DOCTYPE html>', false)
-            ->assertDontSee('cdn.tailwindcss.com');
+            ->assertDontSee('<!DOCTYPE html>', false);
+    }
+
+    public function test_the_page_pulls_nothing_but_a_font_from_the_network(): void
+    {
+        $response = $this->get('/db');
+
+        $response->assertOk()
+            ->assertDontSee('cdn.tailwindcss.com')
+            ->assertDontSee('cdn.jsdelivr.net')
+            ->assertDontSee('unpkg.com');
     }
 
     public function test_the_fragment_endpoint_returns_json_on_demand(): void
@@ -93,6 +134,8 @@ final class ViewerTest extends TestCase
             ->assertJsonPath('rows.0.name', 'User 4')
             ->assertJsonPath('columns.0.name', 'id')
             ->assertJsonPath('columns.0.primary_key', true)
+            ->assertJsonPath('columns.1.foreign_key', 'accounts.id')
+            ->assertJsonPath('sql', 'SELECT * FROM "users" LIMIT 3 OFFSET 3')
             ->assertJsonCount(3, 'rows');
     }
 
@@ -128,6 +171,32 @@ final class ViewerTest extends TestCase
             ->assertOk()
             ->assertDontSee('sup3r-s3cret')
             ->assertDontSee('db_user');
+    }
+
+    public function test_it_never_prints_the_path_of_a_database_outside_the_project(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'laradb').'.sqlite';
+        touch($file);
+
+        try {
+            $this->reloadApplicationWith([
+                'laradb.connection' => 'elsewhere',
+                'database.connections.elsewhere' => [
+                    'driver' => 'sqlite',
+                    'database' => $file,
+                    'prefix' => '',
+                ],
+            ]);
+
+            // The header names the database, but a server path is not
+            // something a web page gets to say out loud.
+            $this->get('/db')
+                ->assertOk()
+                ->assertSee(basename($file))
+                ->assertDontSee(dirname($file));
+        } finally {
+            @unlink($file);
+        }
     }
 
     public function test_a_broken_connection_renders_an_error_instead_of_a_blank_page(): void

@@ -13,6 +13,9 @@ final class TablePage
     /**
      * @param  list<ColumnInfo>  $columns
      * @param  list<array<string, mixed>>  $rows
+     * @param  string  $sql  the statement that produced these rows, shown in
+     *                       the UI so the reader knows exactly what was run
+     * @param  float  $durationMs  how long that statement took
      */
     public function __construct(
         public readonly string $table,
@@ -21,7 +24,26 @@ final class TablePage
         public readonly int $page,
         public readonly int $perPage,
         public readonly int $total,
+        public readonly string $sql = '',
+        public readonly float $durationMs = 0.0,
     ) {}
+
+    /**
+     * The primary key of the table, as a comma-separated list of column names,
+     * or null when the table has none.
+     */
+    public function primaryKey(): ?string
+    {
+        $names = [];
+
+        foreach ($this->columns as $column) {
+            if ($column->primaryKey) {
+                $names[] = $column->name;
+            }
+        }
+
+        return $names === [] ? null : implode(', ', $names);
+    }
 
     public function lastPage(): int
     {
@@ -109,12 +131,14 @@ final class TablePage
     /**
      * @return array{
      *     table: string,
-     *     columns: list<array{name: string, type: string, nullable: bool, primary_key: bool, default: string|null}>,
+     *     columns: list<array{name: string, type: string, nullable: bool, primary_key: bool, default: string|null, foreign_key: string|null}>,
      *     rows: list<array<string, mixed>>,
      *     page: int,
      *     per_page: int,
      *     total: int,
-     *     last_page: int
+     *     last_page: int,
+     *     sql: string,
+     *     duration_ms: float
      * }
      */
     public function toArray(): array
@@ -127,6 +151,8 @@ final class TablePage
             'per_page' => $this->perPage,
             'total' => $this->total,
             'last_page' => $this->lastPage(),
+            'sql' => $this->sql,
+            'duration_ms' => $this->durationMs,
         ];
     }
 }
