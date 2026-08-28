@@ -1,8 +1,15 @@
 ![LaraDb](github/banner.webp)
 
-# LaraDB — A read-only database browser for Laravel.
+# LaraDB — A read-only database browser for your Laravel application.
 
-A read-only database browser you drop into a Laravel application.
+Have you ever had this problem?
+
+- You develop locally a project, and need to inspect the database.
+- You are too lazy to setup connection in TablePlus.
+- You wish you had a way to quickly inspect the database.
+
+LaraDB is a package that gives you a route to inspect the local db in your
+browser.
 
 Install it, open `/db`, and get your tables on the left and their rows on the
 right — a small phpMyAdmin, without the server, the login screen, or the
