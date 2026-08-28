@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaraDb\Tests\Feature;
 
+use Illuminate\Support\Facades\Route;
 use LaraDb\Tests\Fixtures\DenyMiddleware;
 use LaraDb\Tests\TestCase;
 
@@ -45,6 +46,48 @@ final class RouteRegistrationTest extends TestCase
 
         $this->get('/db')->assertForbidden();
         $this->get('/db/tables/users')->assertForbidden();
+    }
+
+    /**
+     * A misconfigured security control must not become an absent one. Laravel
+     * drops a group's `middleware` key when it is not set, so a null or empty
+     * config would otherwise publish the whole database unauthenticated.
+     */
+    public function test_an_empty_middleware_config_falls_back_to_the_safe_default(): void
+    {
+        foreach ([null, []] as $configured) {
+            $this->reloadApplicationWith(['laradb.middleware' => $configured]);
+
+            foreach ($this->laradbRoutes() as $uri => $middleware) {
+                $this->assertContains('auth', $middleware, $uri.' was published without authentication.');
+                $this->assertContains('web', $middleware, $uri.' was published without the web group.');
+            }
+        }
+    }
+
+    public function test_a_middleware_config_given_as_a_string_still_applies(): void
+    {
+        $this->reloadApplicationWith(['laradb.middleware' => DenyMiddleware::class]);
+
+        $this->get('/db')->assertForbidden();
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    private function laradbRoutes(): array
+    {
+        $routes = [];
+
+        foreach (Route::getRoutes()->getRoutes() as $route) {
+            if (str_starts_with($route->uri(), 'db')) {
+                $routes[$route->uri()] = $route->gatherMiddleware();
+            }
+        }
+
+        $this->assertNotSame([], $routes, 'No LaraDb routes were registered at all.');
+
+        return $routes;
     }
 
     public function test_the_routes_are_named(): void

@@ -131,6 +131,12 @@ public function boot(): void
 The stack applies to the whole route group, so the page, the HTML fragment and
 the JSON endpoint are all behind the same gate. A user who fails it gets a 403.
 
+Emptying this setting does not turn the gate off — `null` and `[]` both fall
+back to `['web', 'auth']`. Laravel drops a route group's `middleware` key when
+it is not set, so the alternative would be publishing the whole database
+unauthenticated because a config value was blank. If you genuinely want the
+viewer reachable without logging in, ask for it: `['web']`.
+
 ### What is not one of the three
 
 `route_prefix` moves the viewer; it does not hide it. A URL is not a secret: it
@@ -149,9 +155,10 @@ Both routes are named and `GET` only.
 | `GET /db/tables/{table}` | `laradb.table` | The rows of one table, as an HTML fragment. |
 
 Both also accept `?column=` and `?value=`, which narrow the table to the rows
-whose column equals that value — see [Following a foreign
-key](#following-a-foreign-key). `?from=` is the label the chip shows and is
-ignored unless it names a real foreign key.
+whose column equals that value — this is what following a foreign key resolves
+to. The column has to be one a foreign key actually points at, or the request
+is a 404; the value is always bound, never interpolated. `?from=` is the label
+the chip shows, and is ignored unless it names a real foreign key.
 
 The fragment endpoint also speaks JSON, with `?format=json` or an
 `Accept: application/json` header:
@@ -173,33 +180,6 @@ The fragment endpoint also speaks JSON, with `?format=json` or an
   "filter": null
 }
 ```
-
-## Following a foreign key
-
-A column the schema declares as a foreign key gets an `FK` badge, and every
-non-`NULL` value in it is a link. Click `account_id = 3` in `users` and you
-land on `accounts`, narrowed to `id = 3`, with a chip naming the key you came
-through and an ✕ to drop it again. Because a foreign key has to reference a
-unique column, the far end is always exactly one row.
-
-This is the only thing in the package that takes a value from the URL and puts
-it in a query, so it is worth being precise about what keeps that safe:
-
-- **The column is not free-form.** It has to be one that a foreign key
-  somewhere in the schema actually points at. `?column=id` on `accounts` works
-  because `users.account_id` references it; `?column=password` on `users` is a
-  404, because nothing references it. The set comes from introspection, the
-  same place the table whitelist comes from — never from a pattern or a guess.
-- **The value is bound, never interpolated.** It is a PDO parameter, whatever
-  it contains. `?value=' OR 1=1 --` selects no rows and raises nothing; the
-  statement shown in the header keeps its `:value` placeholder, because that is
-  genuinely what ran.
-- **The value is capped** at 255 characters. A key lookup does not need more.
-
-The `from=` parameter, which is only there so the chip can say *← users.
-account_id*, is checked against the schema too: the foreign key it names has to
-be the one that actually points at the filter being applied, or the label is
-dropped.
 
 ## Using the core without Laravel
 

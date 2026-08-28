@@ -79,7 +79,7 @@ final class LaraDbController
                 'tables' => $tables,
                 'selected' => $selected,
                 'page' => null,
-                'error' => $e->getMessage(),
+                'error' => $this->reported($e),
                 'database' => $this->describe($driver),
                 'queries' => $driver->queryCount(),
             ]);
@@ -114,11 +114,13 @@ final class LaraDbController
 
             abort(404, 'Unknown table.');
         } catch (LaraDbException $e) {
+            $message = $this->reported($e);
+
             if ($this->wantsJson($request)) {
-                return new JsonResponse(['message' => $e->getMessage()], 500);
+                return new JsonResponse(['message' => $message], 500);
             }
 
-            return $this->viewResponse('laradb::partials.error', ['error' => $e->getMessage()], 500);
+            return $this->viewResponse('laradb::partials.error', ['error' => $message], 500);
         }
 
         if ($this->wantsJson($request)) {
@@ -280,16 +282,26 @@ final class LaraDbController
 
     private function connectionError(LaraDbException $e): Response
     {
-        // The visitor gets the sanitised message; the developer gets the real
-        // one in the application log.
-        report($e->getPrevious() ?? $e);
-
         return $this->viewResponse('laradb::index', [
             'tables' => [],
             'selected' => null,
             'page' => null,
-            'error' => $e->getMessage(),
+            'error' => $this->reported($e),
         ], 500);
+    }
+
+    /**
+     * Send the real failure to the log and hand back the one the page may say.
+     *
+     * Every LaraDbException on its way to a visitor goes through here, so that
+     * sanitising a message is not something a future catch block can forget to
+     * do.
+     */
+    private function reported(LaraDbException $e): string
+    {
+        report($e->getPrevious() ?? $e);
+
+        return $e->getMessage();
     }
 
     /**

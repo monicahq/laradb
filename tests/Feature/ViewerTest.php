@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace LaraDb\Tests\Feature;
 
+use LaraDb\Drivers\DriverInterface;
+use LaraDb\Tests\Fixtures\ExplodingDriver;
 use LaraDb\Tests\TestCase;
+use PDO;
 
 final class ViewerTest extends TestCase
 {
@@ -250,6 +253,31 @@ final class ViewerTest extends TestCase
             ->assertOk()
             ->assertDontSee('sup3r-s3cret')
             ->assertDontSee('db_user');
+    }
+
+    public function test_a_failing_query_does_not_describe_the_database_to_the_visitor(): void
+    {
+        $this->app->instance(DriverInterface::class, new ExplodingDriver(new PDO('sqlite::memory:')));
+
+        // The fragment endpoint, as HTML and as JSON...
+        $this->get('/db/tables/users')
+            ->assertStatus(500)
+            ->assertSee('The database query could not be executed.')
+            // The driver's own words name the relation and the statement. They
+            // belong in the log, not on the page.
+            ->assertDontSee('SQLSTATE')
+            ->assertDontSee('payroll_2026');
+
+        $this->getJson('/db/tables/users')
+            ->assertStatus(500)
+            ->assertJsonPath('message', 'The database query could not be executed.');
+
+        // ...and the full page, which renders the same error in its main pane.
+        $this->get('/db?table=users')
+            ->assertOk()
+            ->assertSee('The database query could not be executed.')
+            ->assertDontSee('SQLSTATE')
+            ->assertDontSee('payroll_2026');
     }
 
     public function test_it_never_prints_the_path_of_a_database_outside_the_project(): void
