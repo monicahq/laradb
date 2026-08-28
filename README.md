@@ -173,33 +173,6 @@ The fragment endpoint also speaks JSON, with `?format=json` or an
 }
 ```
 
-## Following a foreign key
-
-A column the schema declares as a foreign key gets an `FK` badge, and every
-non-`NULL` value in it is a link. Click `account_id = 3` in `users` and you
-land on `accounts`, narrowed to `id = 3`, with a chip naming the key you came
-through and an ✕ to drop it again. Because a foreign key has to reference a
-unique column, the far end is always exactly one row.
-
-This is the only thing in the package that takes a value from the URL and puts
-it in a query, so it is worth being precise about what keeps that safe:
-
-- **The column is not free-form.** It has to be one that a foreign key
-  somewhere in the schema actually points at. `?column=id` on `accounts` works
-  because `users.account_id` references it; `?column=password` on `users` is a
-  404, because nothing references it. The set comes from introspection, the
-  same place the table whitelist comes from — never from a pattern or a guess.
-- **The value is bound, never interpolated.** It is a PDO parameter, whatever
-  it contains. `?value=' OR 1=1 --` selects no rows and raises nothing; the
-  statement shown in the header keeps its `:value` placeholder, because that is
-  genuinely what ran.
-- **The value is capped** at 255 characters. A key lookup does not need more.
-
-The `from=` parameter, which is only there so the chip can say *← users.
-account_id*, is checked against the schema too: the foreign key it names has to
-be the one that actually points at the filter being applied, or the label is
-dropped.
-
 ## Using the core without Laravel
 
 The reading side depends on nothing but PDO, so it works anywhere:
