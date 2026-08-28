@@ -42,6 +42,10 @@ return [
     |
     |     'middleware' => ['web', 'auth', 'can:viewLaraDb'],
     |
+    | Setting this to null or [] does not publish the viewer unprotected: it
+    | falls back to ['web', 'auth']. If you really want it reachable without
+    | authentication, say so explicitly with ['web'].
+    |
     */
 
     'middleware' => ['web', 'auth'],

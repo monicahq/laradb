@@ -124,6 +124,12 @@ public function boot(): void
 The stack applies to the whole route group, so the page, the HTML fragment and
 the JSON endpoint are all behind the same gate. A user who fails it gets a 403.
 
+Emptying this setting does not turn the gate off — `null` and `[]` both fall
+back to `['web', 'auth']`. Laravel drops a route group's `middleware` key when
+it is not set, so the alternative would be publishing the whole database
+unauthenticated because a config value was blank. If you genuinely want the
+viewer reachable without logging in, ask for it: `['web']`.
+
 ### What is not one of the three
 
 `route_prefix` moves the viewer; it does not hide it. A URL is not a secret: it

@@ -67,6 +67,33 @@ final class LaraDbServiceProvider extends ServiceProvider
     }
 
     /**
+     * The middleware stack to protect the routes with, falling back to the
+     * safe default rather than to nothing.
+     *
+     * A config value of null or [] would otherwise register the viewer with no
+     * middleware at all — Laravel drops the key when it is not set, and the
+     * whole database becomes readable by anyone who finds the URL. A security
+     * control that disappears when its configuration is wrong is worse than no
+     * control, because it looks like one. Set it to ['web'] if you genuinely
+     * want the viewer unauthenticated.
+     *
+     * @return array<int, string>
+     */
+    private function middleware(mixed $configured): array
+    {
+        if (is_string($configured) && $configured !== '') {
+            return [$configured];
+        }
+
+        if (is_array($configured) && $configured !== []) {
+            /** @var array<int, string> */
+            return $configured;
+        }
+
+        return ['web', 'auth'];
+    }
+
+    /**
      * The viewer is off outside of `local` unless it is explicitly turned on.
      * Exposing the contents of a database is not something that should ever
      * happen because someone forgot to set a variable.
@@ -86,12 +113,9 @@ final class LaraDbServiceProvider extends ServiceProvider
     {
         $config = $this->app->make('config');
 
-        /** @var array<int, string> $middleware */
-        $middleware = $config->get('laradb.middleware', ['web', 'auth']);
-
         Route::group([
             'prefix' => (string) $config->get('laradb.route_prefix', 'db'),
-            'middleware' => $middleware,
+            'middleware' => $this->middleware($config->get('laradb.middleware')),
             'as' => 'laradb.',
             'namespace' => null,
         ], function (): void {
