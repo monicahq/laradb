@@ -148,9 +148,10 @@ Both routes are named and `GET` only.
 | `GET /db/tables/{table}` | `laradb.table` | The rows of one table, as an HTML fragment. |
 
 Both also accept `?column=` and `?value=`, which narrow the table to the rows
-whose column equals that value — see [Following a foreign
-key](#following-a-foreign-key). `?from=` is the label the chip shows and is
-ignored unless it names a real foreign key.
+whose column equals that value — this is what following a foreign key resolves
+to. The column has to be one a foreign key actually points at, or the request
+is a 404; the value is always bound, never interpolated. `?from=` is the label
+the chip shows, and is ignored unless it names a real foreign key.
 
 The fragment endpoint also speaks JSON, with `?format=json` or an
 `Accept: application/json` header:
