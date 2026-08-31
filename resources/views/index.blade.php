@@ -328,6 +328,9 @@
         }
 
         .ldb-status {
+            /* A <dl> carries a UA default margin, which would float the strip
+               off the bottom of the pane and leave a gap under it. */
+            margin: 0;
             flex: none;
             display: flex;
             align-items: center;
