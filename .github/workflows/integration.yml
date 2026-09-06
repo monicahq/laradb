@@ -16,35 +16,26 @@ concurrency:
 
 jobs:
   matrix:
-    name: PHP ${{ matrix.php }} · Laravel ${{ matrix.laravel }}
+    name: PHP ${{ matrix.php-version }} · Laravel ${{ matrix.laravel-version }}
     runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.1', '8.2', '8.3', '8.4']
-        laravel: ['10.*', '11.*', '12.*', '13.*']
-        include:
-          - laravel: '10.*'
-            testbench: '8.*'
-          - laravel: '11.*'
-            testbench: '9.*'
-          - laravel: '12.*'
-            testbench: '10.*'
-          - laravel: '13.*'
-            testbench: '11.*'
+        php-version: ['8.1', '8.2', '8.3', '8.4']
+        laravel-version: ['10.*', '11.*', '12.*', '13.*']
         exclude:
           # Laravel 10 predates PHP 8.4; 11 and 12 need PHP 8.2+; 13 needs 8.3+.
-          - laravel: '10.*'
-            php: '8.4'
-          - laravel: '11.*'
-            php: '8.1'
-          - laravel: '12.*'
-            php: '8.1'
-          - laravel: '13.*'
-            php: '8.1'
-          - laravel: '13.*'
-            php: '8.2'
+          - laravel-version: '10.*'
+            php-version: '8.4'
+          - laravel-version: '11.*'
+            php-version: '8.1'
+          - laravel-version: '12.*'
+            php-version: '8.1'
+          - laravel-version: '13.*'
+            php-version: '8.1'
+          - laravel-version: '13.*'
+            php-version: '8.2'
 
     services:
       mysql:
@@ -85,28 +76,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Set up PHP
-        uses: shivammathur/setup-php@v2
+      - name: Install php dependencies
+        uses: monicahq/workflows/.github/actions/php@v4
         with:
-          php-version: ${{ matrix.php }}
-          extensions: pdo, pdo_sqlite, pdo_mysql, pdo_pgsql, mbstring
-          coverage: none
+          php-version: ${{ matrix.php-version }}
+          connection: mysql, pgsql, sqlite
+          coverage: true
 
       - name: Install dependencies
         run: |
-          composer require \
-            "illuminate/support:${{ matrix.laravel }}" \
-            "orchestra/testbench:${{ matrix.testbench }}" \
-            --no-interaction --no-update
-          composer update --prefer-dist --no-interaction --no-progress
+          export COMPOSER_ROOT_VERSION=dev-main
+          composer require "illuminate/support:${{ matrix.laravel-version }}" --no-update
+          composer update --no-interaction --no-progress --prefer-dist
 
-      - name: Run the whole suite
-        run: vendor/bin/phpunit
-
-      - name: Fail if the database suites did not actually run
-        run: |
-          vendor/bin/phpunit --testsuite Integration --do-not-cache-result | tee integration.log
-          if grep -q "Skipped" integration.log; then
-            echo "::error::MySQL/PostgreSQL suites were skipped — the services were not reachable."
-            exit 1
-          fi
+      - name: Install php dependencies
+        uses: monicahq/workflows/.github/actions/phptests@v4
+        with:
+          coverage: true
+          artifact: default

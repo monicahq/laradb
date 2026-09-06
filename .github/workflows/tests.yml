@@ -26,10 +26,10 @@ jobs:
     name: Run tests
     uses: monicahq/workflows/.github/workflows/library.yml@v2
     with:
-      php-versions: "['8.3']"
-      laravel-versions: "['^11.0']"
-      default-php-version: '8.3'
-      default-laravel-version: '^11.0'
+      php-versions: "['8.4','8.5']"
+      laravel-versions: "['^12.0','^13.0']"
+      default-php-version: '8.4'
+      default-laravel-version: '^13.0'
       matrix-exclude: ""
       project: monicahq_laradb
     secrets:
