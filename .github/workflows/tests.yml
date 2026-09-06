@@ -1,43 +1,124 @@
-# name: Unit tests
+name: Unit tests
 
-# on:
-#   push:
-#     branches:
-#       - main
-#       - next
-#       - next-major
-#       - beta
-#       - alpha
-#   pull_request:
-#     types: [opened, synchronize, reopened]
-#   release:
-#     types:
-#       - created
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
 
-# permissions:
-#   contents: write
-#   issues: write
-#   pull-requests: write
-#   checks: write
-#   id-token: write
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 
-# jobs:
-#   tests:
-#     name: Run tests
-#     uses: monicahq/workflows/.github/workflows/library.yml@v4
-#     with:
-#       php-versions: "['8.4','8.5']"
-#       laravel-versions: "['^12.0','^13.0']"
-#       default-php-version: '8.4'
-#       default-laravel-version: '^13.0'
-#       matrix-exclude: "[]"
-#       project: monicahq_laradb
-#     secrets:
-#       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  checks: write
+  id-token: write
 
-#   release:
-#     name: Release
-#     uses: monicahq/workflows/.github/workflows/release.yml@v4
-#     secrets:
-#       GH_TOKEN_RELEASE: ${{ secrets.GH_TOKEN_RELEASE }}
-#     needs: tests
+jobs:
+  tests:
+    name: PHP ${{ matrix.php-version }} · Laravel ${{ matrix.laravel-version }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['8.1', '8.2', '8.3', '8.4', '8.5']
+        laravel-version: ['^10.0', '^11.0', '^12.0', '^13.0']
+        exclude:
+          # Laravel 10 predates PHP 8.4; 11 and 12 need PHP 8.2+; 13 needs 8.3+.
+          - laravel-version: '^10.0'
+            php-version: '8.4'
+          - laravel-version: '^10.0'
+            php-version: '8.5'
+          - laravel-version: '^11.0'
+            php-version: '8.1'
+          - laravel-version: '^12.0'
+            php-version: '8.1'
+          - laravel-version: '^13.0'
+            php-version: '8.1'
+          - laravel-version: '^13.0'
+            php-version: '8.2'
+
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: laradb_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -ppassword"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: laradb_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd=pg_isready
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      LARADB_MYSQL_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=laradb_test'
+      LARADB_MYSQL_USERNAME: root
+      LARADB_MYSQL_PASSWORD: password
+      LARADB_PGSQL_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=laradb_test'
+      LARADB_PGSQL_USERNAME: postgres
+      LARADB_PGSQL_PASSWORD: password
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install php dependencies
+        uses: monicahq/workflows/.github/actions/php@v4
+        with:
+          php-version: ${{ matrix.php-version }}
+          connection: mysql, pgsql, sqlite
+          coverage: true
+
+      - name: Install dependencies
+        run: |
+          export COMPOSER_ROOT_VERSION=dev-main
+          composer require "illuminate/support:${{ matrix.laravel-version }}" --no-update
+          composer update --no-interaction --no-progress --prefer-dist
+
+      - name: Set results artifact name
+        id: artifact
+        run: echo "name=${{ matrix.php-version }}_${{ matrix.laravel-version }}" | sed -e "s/*//g" >> $GITHUB_OUTPUT
+
+      - name: Install php dependencies
+        uses: monicahq/workflows/.github/actions/phptests@v4
+        with:
+          coverage: true
+          artifact: ${{ steps.artifact.outputs.name }}
+
+  reporting:
+    name: Reportings
+    uses: monicahq/workflows/.github/workflows/reporting.yml@v4
+    with:
+      project: monicahq_laradb
+      organization: monicahq
+      pattern: ${{ format('results_{0}_{1}*', '8.4', '^13.0') }}
+      sources: src,config,resources,routes
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    needs: tests
+
+  release:
+    name: Release
+    uses: monicahq/workflows/.github/workflows/release.yml@v4
+    secrets:
+      GH_TOKEN_RELEASE: ${{ secrets.GH_TOKEN_RELEASE }}
+    needs: tests
