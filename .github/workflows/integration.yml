@@ -15,19 +15,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  matrix:
+  tests:
     name: PHP ${{ matrix.php-version }} · Laravel ${{ matrix.laravel-version }}
     runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
       matrix:
-        php-version: ['8.1', '8.2', '8.3', '8.4']
+        php-version: ['8.1', '8.2', '8.3', '8.4', '8.5']
         laravel-version: ['10.*', '11.*', '12.*', '13.*']
         exclude:
           # Laravel 10 predates PHP 8.4; 11 and 12 need PHP 8.2+; 13 needs 8.3+.
           - laravel-version: '10.*'
             php-version: '8.4'
+          - laravel-version: '10.*'
+            php-version: '8.5'
           - laravel-version: '11.*'
             php-version: '8.1'
           - laravel-version: '12.*'
@@ -89,8 +91,31 @@ jobs:
           composer require "illuminate/support:${{ matrix.laravel-version }}" --no-update
           composer update --no-interaction --no-progress --prefer-dist
 
+      - name: Set results artifact name
+        id: artifact
+        run: echo "name=${{ matrix.php-version }}_${{ matrix.laravel-version }}" | sed -e "s/*//g" >> $GITHUB_OUTPUT
+
       - name: Install php dependencies
         uses: monicahq/workflows/.github/actions/phptests@v4
         with:
           coverage: true
-          artifact: default
+          artifact: ${{ steps.artifact.outputs.name }}
+
+  reporting:
+    name: Reportings
+    uses: monicahq/workflows/.github/workflows/reporting.yml@v4
+    with:
+      project: monicahq_laradb
+      organization: monicahq
+      pattern: ${{ format('results_{0}_{1}*', '8.4', '^13.0') }}
+      sources: src,config,resources,routes
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    needs: tests
+
+  release:
+    name: Release
+    uses: monicahq/workflows/.github/workflows/release.yml@v4
+    secrets:
+      GH_TOKEN_RELEASE: ${{ secrets.GH_TOKEN_RELEASE }}
+    needs: tests

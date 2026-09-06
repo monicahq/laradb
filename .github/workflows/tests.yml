@@ -1,43 +1,43 @@
-name: Unit tests
+# name: Unit tests
 
-on:
-  push:
-    branches:
-      - main
-      - next
-      - next-major
-      - beta
-      - alpha
-  pull_request:
-    types: [opened, synchronize, reopened]
-  release:
-    types:
-      - created
+# on:
+#   push:
+#     branches:
+#       - main
+#       - next
+#       - next-major
+#       - beta
+#       - alpha
+#   pull_request:
+#     types: [opened, synchronize, reopened]
+#   release:
+#     types:
+#       - created
 
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  checks: write
-  id-token: write
+# permissions:
+#   contents: write
+#   issues: write
+#   pull-requests: write
+#   checks: write
+#   id-token: write
 
-jobs:
-  tests:
-    name: Run tests
-    uses: monicahq/workflows/.github/workflows/library.yml@v4
-    with:
-      php-versions: "['8.4','8.5']"
-      laravel-versions: "['^12.0','^13.0']"
-      default-php-version: '8.4'
-      default-laravel-version: '^13.0'
-      matrix-exclude: ""
-      project: monicahq_laradb
-    secrets:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+# jobs:
+#   tests:
+#     name: Run tests
+#     uses: monicahq/workflows/.github/workflows/library.yml@v4
+#     with:
+#       php-versions: "['8.4','8.5']"
+#       laravel-versions: "['^12.0','^13.0']"
+#       default-php-version: '8.4'
+#       default-laravel-version: '^13.0'
+#       matrix-exclude: "[]"
+#       project: monicahq_laradb
+#     secrets:
+#       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-  release:
-    name: Release
-    uses: monicahq/workflows/.github/workflows/release.yml@v4
-    secrets:
-      GH_TOKEN_RELEASE: ${{ secrets.GH_TOKEN_RELEASE }}
-    needs: tests
+#   release:
+#     name: Release
+#     uses: monicahq/workflows/.github/workflows/release.yml@v4
+#     secrets:
+#       GH_TOKEN_RELEASE: ${{ secrets.GH_TOKEN_RELEASE }}
+#     needs: tests
